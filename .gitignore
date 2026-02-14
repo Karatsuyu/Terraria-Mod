@@ -1,0 +1,12 @@
+# Archivos de compilación de .NET
+bin/
+obj/
+
+# Archivos de tModLoader
+build/
+*.tmod
+
+# Archivos de usuario y caché
+*.user
+*.suo
+.vs/

@@ -1,0 +1,35 @@
+# This file will automatically update with entries for new content after a build and reload.
+
+Items: {
+	AmeWeapon: {
+		DisplayName: Ame
+		Tooltip:
+			'''
+			Un arma modular que trasciende clases.
+			Click derecho para cambiar de modo.
+			'''
+	}
+
+	Ame: {
+		Tooltip: ""
+		DisplayName: Ame
+	}
+}
+
+Projectiles: {
+	AmeMeleeSlash.DisplayName: Ame Slash
+	AmeZenithBlade.DisplayName: Ame Blade (Curved)
+	AmeZenithReal.DisplayName: Ame Blade (Zenith)
+	AmeMeleeMultiBlade.DisplayName: Ame Multi-Blade
+	AmeMagicBlast.DisplayName: Ame Magic Blast
+	AmeRangedShot.DisplayName: Ame Ranged Shot
+	AmeSummonMinion.DisplayName: Ame Minion
+	AmeClone.DisplayName: Ame Clone
+}
+
+Buffs: {
+	AmeMinionBuff: {
+		DisplayName: Ame Minion
+		Description: El minion de Ame luchará por ti
+	}
+}
