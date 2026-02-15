@@ -179,56 +179,54 @@ namespace Ame.Items
 		switch (CurrentMode)
 		{
 			case WeaponMode.Melee1:
-				// Sistema Zenith mejorado: ahora dispara 6 espadas por swing
-				// Calcular qué disparo es (0 = primero, 1 = segundo, etc.)
-				int shotNumber = (player.itemAnimationMax - player.itemAnimation) / player.itemTime;					// Obtener posición del cursor
-					Vector2 targetPos = Main.MouseWorld;
-					Vector2 directionToCursor = targetPos - player.MountedCenter;
+				// Sistema Zenith con progreso normalizado - AmeZenithBlade
+				int shotNumber = (player.itemAnimationMax - player.itemAnimation) / player.itemTime;
+				
+				Vector2 targetPos = Main.MouseWorld;
+				Vector2 directionToCursor = targetPos - player.MountedCenter;
+				
+				// Velocidad base (la mitad de la dirección al cursor, como Zenith)
+				Vector2 baseVelocity = directionToCursor / 2f;
+				
+				// Variación del arco aleatorio (-100 a 100)
+				float arcVariation = Main.rand.Next(-100, 101);
+				
+				// DISPARO 1: Directo
+				if (shotNumber == 0)
+				{
+					// Primera espada va directa
+				}
+				// DISPAROS 2-5: Buscar enemigos o dispersión
+				else if (shotNumber >= 1)
+				{
+					NPC target = FindNearestEnemy(targetPos, 400f);
 					
-					// DISPARO 1: Directo al cursor
-					if (shotNumber == 0)
+					if (target != null)
 					{
-						// Primera espada va directo
-						velocity = directionToCursor.SafeNormalize(Vector2.UnitX) * Item.shootSpeed;
+						directionToCursor = target.Center - player.MountedCenter;
+						baseVelocity = directionToCursor / 2f;
 					}
-					// DISPAROS 2 y 3: Buscar enemigos cercanos o dispersión aleatoria
 					else
 					{
-						// Intentar encontrar un enemigo cerca del cursor
-						NPC target = FindNearestEnemy(targetPos, 400f);
-						
-						if (target != null)
-						{
-							// Apuntar al enemigo encontrado
-							directionToCursor = target.Center - player.MountedCenter;
-							velocity = directionToCursor.SafeNormalize(Vector2.UnitX) * Item.shootSpeed;
-						}
-						else
-						{
-							// Sin enemigo: dispersión aleatoria circular
-							Vector2 randomOffset = Main.rand.NextVector2Circular(150f, 150f);
-							directionToCursor += randomOffset;
-							velocity = directionToCursor.SafeNormalize(Vector2.UnitX) * Item.shootSpeed;
-						}
+						// Dispersión circular aleatoria
+						directionToCursor += Main.rand.NextVector2Circular(150f, 150f);
+						baseVelocity = directionToCursor / 2f;
 					}
-					
-					// Variación aleatoria para cada espada (influye en el arco)
-					float randomArc = Main.rand.Next(-100, 101);
-					
-					// Crear UNA espada con ai personalizado
-					Projectile.NewProjectile(
-						source,
-						player.MountedCenter,
-						velocity,
-						type,
-						damage,
-						knockback,
-						player.whoAmI,
-						randomArc,  // ai[0] - variación del arco
-						0f          // ai[1] - no usado
-					);
-					
-					return false;  // No disparar el proyectil default
+				}
+				
+				// Crear proyectil con sistema de progreso normalizado
+				Projectile.NewProjectile(
+					source,
+					player.MountedCenter,
+					baseVelocity,
+					ModContent.ProjectileType<Projectiles.Modes.AmeZenithBlade>(),
+					damage,
+					knockback,
+					player.whoAmI,
+					arcVariation,  // ai[0] - variación del arco
+					0f             // ai[1] - no usado
+				);
+				return false;
 
 			case WeaponMode.Melee2:
 				// Sistema Zenith REAL - AI_182_FinalFractal (código vanilla adaptado)
@@ -238,7 +236,7 @@ namespace Ame.Items
 				Vector2 directionToCursor2 = targetPos2 - player.MountedCenter;
 				
 				// Velocidad base (la mitad de la dirección al cursor, como Zenith)
-				Vector2 baseVelocity = directionToCursor2 / 2f;
+				Vector2 baseVelocity2 = directionToCursor2 / 2f;
 				
 				// Variación del arco aleatorio (-100 a 100)
 				float arcVariation2 = Main.rand.Next(-100, 101);
@@ -256,13 +254,13 @@ namespace Ame.Items
 					if (target2 != null)
 					{
 						directionToCursor2 = target2.Center - player.MountedCenter;
-						baseVelocity = directionToCursor2 / 2f;
+						baseVelocity2 = directionToCursor2 / 2f;
 					}
 					else
 					{
 						// Dispersión circular aleatoria
 						directionToCursor2 += Main.rand.NextVector2Circular(150f, 150f);
-						baseVelocity = directionToCursor2 / 2f;
+						baseVelocity2 = directionToCursor2 / 2f;
 					}
 				}
 				
@@ -270,7 +268,7 @@ namespace Ame.Items
 				Projectile.NewProjectile(
 					source,
 					player.MountedCenter,
-					baseVelocity,
+					baseVelocity2,
 					ModContent.ProjectileType<Projectiles.Modes.AmeZenithReal>(),
 					damage,
 					knockback,
@@ -280,7 +278,7 @@ namespace Ame.Items
 				);
 				return false;
 
-				case WeaponMode.Magic:
+			case WeaponMode.Magic:
 					if (player.statMana >= 10)
 					{
 						player.statMana -= 10;

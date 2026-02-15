@@ -86,32 +86,31 @@ namespace Ame.Projectiles.Modes
 			// Dirección del giro
 			float direction = (Projectile.velocity.X > 0f) ? 1f : -1f;
 
-		// Ángulo de rotación (sistema circular de Zenith)
-		float rotationAngle = MathHelper.Pi + direction * lerpValue2 * (MathHelper.TwoPi);
+			// Ángulo de rotación (sistema circular de Zenith)
+			float rotationAngle = MathHelper.Pi + direction * lerpValue2 * (MathHelper.TwoPi);
 
-		// Distancia desde el punto de origen
-		float distance = velocityLength + Utils.GetLerpValue(0.5f, 1f, lerpValue2, true) * 40f;
-		float minDistance = 60f;
-		if (distance < minDistance)
-			distance = minDistance;
+			// Distancia desde el punto de origen
+			float distance = velocityLength + Utils.GetLerpValue(0.5f, 1f, lerpValue2, true) * 40f;
+			float minDistance = 60f;
+			if (distance < minDistance)
+				distance = minDistance;
 
-		// Posición base - El cursor está en la posición del jugador + la velocidad COMPLETA
-		// (no la mitad, porque Projectile.velocity ya viene dividida desde Shoot)
-		Vector2 targetPosition = mountedCenter + Projectile.velocity * 2f; // Multiplicar por 2 porque viene dividida
+			// Posición base
+			Vector2 basePosition = mountedCenter + Projectile.velocity;
 
-		// Offset circular (el corazón del sistema Zenith)
-		Vector2 circularOffset = new Vector2(1f, 0f).RotatedBy(rotationAngle) * 
-			new Vector2(distance, arcVariation * MathHelper.Lerp(2f, 1f, lerpValue));
+			// Offset circular (el corazón del sistema Zenith)
+			Vector2 circularOffset = new Vector2(1f, 0f).RotatedBy(rotationAngle) * 
+				new Vector2(distance, arcVariation * MathHelper.Lerp(2f, 1f, lerpValue));
 
-		// Posición final con rotación aplicada
-		Vector2 finalPosition = targetPosition + circularOffset.RotatedBy(velocityRotation);
+			// Posición final con rotación aplicada
+			Vector2 finalPosition = basePosition + circularOffset.RotatedBy(velocityRotation);
 
-		// Offset adicional para efecto de "swing"
-		Vector2 swingOffset = (1f - Utils.GetLerpValue(0f, 0.5f, lerpValue2, true)) * 
-			new Vector2(direction * -distance * 0.1f, -arcVariation * 0.3f);
+			// Offset adicional para efecto de "swing"
+			Vector2 swingOffset = (1f - Utils.GetLerpValue(0f, 0.5f, lerpValue2, true)) * 
+				new Vector2(direction * -distance * 0.1f, -arcVariation * 0.3f);
 
-		// Aplicar posición
-		Projectile.Center = finalPosition + swingOffset;
+			// Aplicar posición
+			Projectile.Center = finalPosition + swingOffset;
 
 			// Rotación visual (importante para el filo)
 			float finalRotation = rotationAngle + velocityRotation;
