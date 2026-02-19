@@ -59,50 +59,47 @@ namespace Ame.Projectiles.Modes
 				return;
 			}
 			
-			// lerpValue2: progreso normalizado (0 a 1)
-			float lerpValue2 = Utils.GetLerpValue(0f, 1f, Projectile.localAI[0] / 60f, clamped: true);
-			float num2 = Projectile.localAI[0] / 60f;
-			
-			// num3: variación del arco (ai[0])
-			float num3 = Projectile.ai[0];
-			
-			// num4: rotación de la velocidad
-			float num4 = Projectile.velocity.ToRotation();
-			
-			// num5: π
-			float num5 = (float)Math.PI;
-			
-			// num6: dirección (1 o -1 según velocity.X)
-			float num6 = ((Projectile.velocity.X > 0f) ? 1 : (-1));
-			
-			// num7: ángulo de rotación circular (π + dirección * progreso * 2π)
-			float num7 = num5 + num6 * lerpValue2 * ((float)Math.PI * 2f);
-			
-			// num8: longitud con ajuste de velocidad
-			float num8 = Projectile.velocity.Length() + Utils.GetLerpValue(0.5f, 1f, lerpValue2, clamped: true) * 40f;
-			
-			// num9: distancia mínima
-			float num9 = 60f;
-			if (num8 < num9)
-			{
-				num8 = num9;
-			}
-			
-			// vector: posición objetivo (mountedCenter + velocity)
-			Vector2 vector = mountedCenter + Projectile.velocity;
-			
-			// spinningpoint: offset circular rotado
-			Vector2 spinningpoint = new Vector2(1f, 0f).RotatedBy(num7) * 
-				new Vector2(num8, num3 * MathHelper.Lerp(2f, 1f, lerpValue));
-			
-			// vector2: posición con offset circular
-			Vector2 vector2 = vector + spinningpoint.RotatedBy(num4);
-			
-			// vector3: offset de "swing" adicional
-			Vector2 vector3 = (1f - Utils.GetLerpValue(0f, 0.5f, lerpValue2, clamped: true)) * 
-				new Vector2((float)((Projectile.velocity.X > 0f) ? 1 : (-1)) * (0f - num8) * 0.1f, (0f - Projectile.ai[0]) * 0.3f);
-			
-			// num10: rotación final
+		// lerpValue2: progreso normalizado (0 a 1)
+		float lerpValue2 = Utils.GetLerpValue(0f, 1f, Projectile.localAI[0] / 60f, clamped: true);
+		float num2 = Projectile.localAI[0] / 60f;
+		
+		// num3: variación del arco (ai[0])
+		float num3 = Projectile.ai[0];
+		
+		// num4: rotación de la velocidad (dirección hacia cursor)
+		float num4 = Projectile.velocity.ToRotation();
+		
+		// num5: π
+		float num5 = (float)Math.PI;
+		
+		// num6: dirección (1 o -1 según velocity.X)
+		float num6 = ((Projectile.velocity.X > 0f) ? 1 : (-1));
+		
+		// num7: ángulo de rotación circular (π + dirección * progreso * 2π)
+		// Esto hace la órbita completa: empieza atrás (π), va hacia adelante, y regresa atrás (3π)
+		float num7 = num5 + num6 * lerpValue2 * ((float)Math.PI * 2f);
+		
+		// 🔥 RADIO DE ÓRBITA FIJO - No depende de distancia al cursor
+		// Empieza pequeño (junto al jugador), crece al medio, se reduce al final
+		float baseRadius = 80f; // Radio base de la órbita
+		float radiusGrowth = Utils.GetLerpValue(0.5f, 1f, lerpValue2, clamped: true) * 40f;
+		float num8 = baseRadius + radiusGrowth;
+		
+		// 🔥 CENTRO DE ÓRBITA = JUGADOR SIEMPRE
+		// El centro de la órbita es el jugador, no un punto intermedio
+		Vector2 vector = mountedCenter;
+		
+		// spinningpoint: offset circular rotado
+		// num7 va de π a 3π (un ciclo completo) = empieza detrás, va al frente, regresa atrás
+		Vector2 spinningpoint = new Vector2(1f, 0f).RotatedBy(num7) * 
+			new Vector2(num8, num3 * MathHelper.Lerp(2f, 1f, lerpValue));
+		
+		// vector2: posición con offset circular rotada en la dirección del cursor
+		Vector2 vector2 = vector + spinningpoint.RotatedBy(num4);
+		
+		// vector3: offset de "swing" adicional (solo al inicio para impulso)
+		Vector2 vector3 = (1f - Utils.GetLerpValue(0f, 0.5f, lerpValue2, clamped: true)) * 
+			new Vector2((float)((Projectile.velocity.X > 0f) ? 1 : (-1)) * (0f - num8) * 0.1f, (0f - Projectile.ai[0]) * 0.3f);			// num10: rotación final
 			float num10 = num7 + num4;
 			
 			// 🔥 AJUSTE DIAGONAL - Tus sprites están a 45° (diagonal derecha arriba)
@@ -144,15 +141,14 @@ namespace Ame.Projectiles.Modes
 				dust.velocity = dustDirection * 2f + player.velocity;
 			}
 			
-			// Iluminación
-			Lighting.AddLight(Projectile.Center, 0.7f, 0.3f, 1f);
-			
-			// Opacidad (fade in/out)
-			Projectile.Opacity = Utils.GetLerpValue(0f, 5f, Projectile.localAI[0], clamped: true) * 
-				Utils.GetLerpValue(120f, 115f, Projectile.localAI[0], clamped: true);
-		}
-
-		// 🔥 CUSTOM RENDERING - Dibuja la textura de la espada con trail
+		// Iluminación
+		Lighting.AddLight(Projectile.Center, 0.7f, 0.3f, 1f);
+		
+		// 🔥 Opacidad (fade in/out) - Se esconde más rápido al regresar al jugador
+		float fadeIn = Utils.GetLerpValue(0f, 5f, Projectile.localAI[0], clamped: true);
+		float fadeOut = Utils.GetLerpValue(120f, 100f, Projectile.localAI[0], clamped: true); // Empieza a desvanecerse en frame 100
+		Projectile.Opacity = fadeIn * fadeOut;
+	}		// 🔥 CUSTOM RENDERING - Dibuja la textura de la espada con trail
 		public override bool PreDraw(ref Color lightColor)
 		{
 			Main.instance.LoadProjectile(Projectile.type);

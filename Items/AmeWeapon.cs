@@ -307,7 +307,8 @@ namespace Ame.Items
 					direction += Main.rand.NextVector2Circular(150f, 150f);
 			}
 
-			Vector2 projectileVelocity = direction / 2f;
+			// 🔥 Normalizar dirección - magnitud FIJA para que no dependa de distancia del cursor
+			Vector2 projectileVelocity = direction.SafeNormalize(Vector2.UnitX) * 20f;
 			float arc = Main.rand.Next(-100, 101);
 
 			// 🔥 ARRAY DE LAS 18 ESPADAS - Selección RANDOM como Zenith vanilla
