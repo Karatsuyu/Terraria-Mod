@@ -4,21 +4,38 @@ using Terraria;
 using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.DataStructures;
+using Terraria.Audio;
+using System;
 
 namespace Ame.Projectiles.Modes
 {
 	/// <summary>
-	/// Modo Melee 1 - Sistema Zenith con progreso normalizado
+	/// Modo Melee 1 - Sistema Zenith con órbitas circulares AI_182_FinalFractal
 	/// ai[0] = variación aleatoria del arco (-100 a 100)
-	/// localAI[0] = progreso (0 a 1)
-	/// localAI[1] = fase (0 = ida, 1 = regreso)
+	/// ai[1] = no usado
 	/// </summary>
 	public class AmeZenithBlade : ModProjectile
 	{
-		private Vector2 startPosition;
-		private Vector2 targetPosition;
-		private Vector2 direction;
-		private float distance;
+		// 🔥 Variables estáticas para compartir cursor entre TODOS los proyectiles del mismo ataque
+		public static float SharedCursorX = 0f;
+		public static float SharedCursorY = 0f;
+		
+		private Vector2 savedTargetPosition;
+		private Vector2 savedDirection;
+		private Vector2 savedInitialVelocity;
+		private bool initialized = false;
+
+		private float LocalTimer
+		{
+			get => Projectile.localAI[0];
+			set => Projectile.localAI[0] = value;
+		}
+
+		private bool PlayedSound
+		{
+			get => Projectile.localAI[1] == 1f;
+			set => Projectile.localAI[1] = value ? 1f : 0f;
+		}
 
 		public override void SetStaticDefaults()
 		{
@@ -28,8 +45,8 @@ namespace Ame.Projectiles.Modes
 
 		public override void SetDefaults()
 		{
-			Projectile.width = 40;
-			Projectile.height = 40;
+			Projectile.width = 60;
+			Projectile.height = 60;
 			Projectile.friendly = true;
 			Projectile.penetrate = -1;
 			Projectile.tileCollide = false;
@@ -38,87 +55,140 @@ namespace Ame.Projectiles.Modes
 			Projectile.ignoreWater = true;
 			Projectile.usesLocalNPCImmunity = true;
 			Projectile.localNPCHitCooldown = 10;
-		}
-
-		public override void OnSpawn(IEntitySource source)
-		{
-			Player player = Main.player[Projectile.owner];
-
-			startPosition = player.MountedCenter;
-
-			// 🔥 Guardamos el destino UNA sola vez
-			targetPosition = Main.MouseWorld;
-
-			direction = targetPosition - startPosition;
-			distance = direction.Length();
-
-			if (distance == 0)
-				distance = 1f;
-
-			direction.Normalize();
-
-			Projectile.localAI[0] = 0f; // progreso
-			Projectile.localAI[1] = 0f; // fase (0 = ida, 1 = regreso)
+			Projectile.extraUpdates = 1;
 		}
 
 		public override void AI()
 		{
-			Player player = Main.player[Projectile.owner];
-
-			if (Projectile.localAI[1] == 0f)
+			// 🔥 Inicialización - UNA SOLA VEZ
+			if (!initialized)
 			{
-				// =========================
-				// 🟢 FASE 0 – IDA EXACTA
-				// =========================
-
-				Projectile.localAI[0] += 0.08f; // velocidad de progreso
-
-				float progress = Projectile.localAI[0];
-
-				if (progress >= 1f)
-				{
-					progress = 1f;
-					Projectile.localAI[1] = 1f; // cambiar a fase regreso
-				}
-
-				// 🎯 Interpolación exacta - NO se pasa del cursor
-				Projectile.Center = startPosition + direction * distance * progress;
+				initialized = true;
+				Player player = Main.player[Projectile.owner];
+				
+				// Guardar velocidad inicial para órbitas
+				savedInitialVelocity = Projectile.velocity;
+				savedDirection = Projectile.velocity.SafeNormalize(Vector2.Zero);
+				
+				// 🔥 CORRECCIÓN 1: TODAS convergen al cursor guardado (variable estática)
+				savedTargetPosition = new Vector2(SharedCursorX, SharedCursorY);
+				
+				// 🔥 CORRECCIÓN 2: Spawn VISIBLE desde el jugador
+				Projectile.Center = player.MountedCenter;
+				Projectile.netUpdate = true;
 			}
-			else
+
+			// Sonido inicial
+			if (!PlayedSound)
 			{
-				// =========================
-				// 🔵 FASE 1 – REGRESO SUAVE
-				// =========================
+				PlayedSound = true;
+				SoundEngine.PlaySound(SoundID.Item1, Projectile.Center);
+			}
 
-				// 🔥 Posición detrás del jugador - desaparece en la espalda
-				Vector2 backPosition = player.MountedCenter - direction * 30f;
+			Player currentPlayer = Main.player[Projectile.owner];
+			Vector2 mountedCenter = currentPlayer.MountedCenter;
 
-				Vector2 toPlayer = backPosition - Projectile.Center;
+			// Incrementar timer
+			LocalTimer += 1f;
 
-				float returnSpeed = 35f;
+			// Duración: 120 frames (60 ida, 60 vuelta)
+			if (LocalTimer >= 120f)
+			{
+				// 🔥 CORRECCIÓN 3: TODAS se ocultan en la misma posición de la espalda
+				Vector2 toCursor = (savedTargetPosition - mountedCenter).SafeNormalize(Vector2.Zero);
+				Projectile.Center = mountedCenter - toCursor * 30f;
+				Projectile.Kill();
+				return;
+			}
 
-				Vector2 desiredVelocity = toPlayer.SafeNormalize(Vector2.Zero) * returnSpeed;
+		// Progreso normalizado (0 a 2 en 120 frames)
+		float normalizedProgress = LocalTimer / 60f;
+		
+		// Variación del arco
+		float arcVariation = Projectile.ai[0];
+		
+		// velocityRotation para órbitas (usa savedDirection - comportamiento original)
+		float velocityRotation = savedDirection.ToRotation();
+		float direction = (savedDirection.X > 0f) ? 1f : -1f;
 
-				// Suavizado estilo Zenith
-				Projectile.velocity = Vector2.Lerp(
-					Projectile.velocity,
-					desiredVelocity,
-					0.2f
+		// 🔥 Distancia al CURSOR GUARDADO (mismo para todas)
+		Vector2 toCursorVec = (savedTargetPosition - mountedCenter).SafeNormalize(Vector2.Zero);
+		float maxDistance = Vector2.Distance(mountedCenter, savedTargetPosition);
+		
+		// 🔥 Progreso triangular 0→1→0
+		// 0→1 (frames 0-60): va hacia cursor
+		// 1→0 (frames 60-120): regresa del cursor
+		float travelProgress = normalizedProgress;
+		if (travelProgress > 1f) 
+			travelProgress = 2f - travelProgress;
+		
+		// 🔥 Distancia completa hasta el cursor
+		float distance = maxDistance * travelProgress;
+
+		// 🔥 basePosition hacia el CURSOR (línea directa)
+		Vector2 basePosition = mountedCenter + toCursorVec * distance;
+
+		// 🔥 ARCO/ÓRBITA usando función SENO - crea curva que pica en el medio
+		// Sin(travelProgress * π) = 0 en inicio, 1 en medio (cursor), 0 en retorno
+		// Esto crea un ARCO, no círculos
+		float arcStrength = (float)Math.Sin(travelProgress * MathHelper.Pi);
+		
+		// Ángulo de rotación simple para variar dirección de órbita entre espadas
+		float rotationAngle = MathHelper.PiOver2 + direction * MathHelper.PiOver4;
+		
+		// 🔥 Offset perpendicular que crea el ARCO
+		// arcStrength hace que el arco sea máximo a mitad de camino
+		float arcRadius = 150f * arcStrength; // El arco es máximo en el medio
+		Vector2 circularOffset = new Vector2(1f, 0f).RotatedBy(rotationAngle) * 
+			new Vector2(arcRadius, arcVariation * arcStrength);
+
+		// Posición final con arco (usa savedDirection para rotación)
+		Vector2 finalPosition = basePosition + circularOffset.RotatedBy(velocityRotation);
+
+		// Offset de swing reducido
+		float swingStrength = (float)Math.Sin(travelProgress * MathHelper.Pi);
+		Vector2 swingOffset = swingStrength * 
+			new Vector2(direction * -distance * 0.05f, -arcVariation * 0.15f);
+
+		// Aplicar posición
+		Projectile.Center = finalPosition + swingOffset;
+
+		// Rotación visual
+		float finalRotation = rotationAngle + velocityRotation;
+		Projectile.rotation = finalRotation + MathHelper.PiOver2;
+
+		// Dirección del sprite
+		Projectile.spriteDirection = Projectile.direction = (savedDirection.X > 0f) ? 1 : -1;
+
+		// Invertir rotación si el arco es negativo
+		if (arcVariation < 0f)
+		{
+			Projectile.rotation = MathHelper.Pi + direction * normalizedProgress * -MathHelper.TwoPi + velocityRotation;
+			Projectile.rotation += MathHelper.PiOver2;
+			Projectile.spriteDirection = Projectile.direction = (savedDirection.X > 0f) ? -1 : 1;
+		}
+
+			// Efectos visuales (polvo)
+			if (normalizedProgress < 1.5f && Main.rand.NextBool(2))
+			{
+				Vector2 dustDirection = (Projectile.rotation - MathHelper.PiOver2).ToRotationVector2();
+				Dust dust = Dust.NewDustDirect(
+					Projectile.Center + dustDirection * 30f,
+					Projectile.width / 2,
+					Projectile.height / 2,
+					DustID.Shadowflame,
+					0f, 0f, 100, default, 1.5f
 				);
-
-				Projectile.Center += Projectile.velocity;
-
-				if (toPlayer.Length() < 25f)
-				{
-					Projectile.Kill();
-				}
+				dust.noGravity = true;
+				dust.velocity = dustDirection * 2f + currentPlayer.velocity;
 			}
 
-			// Rotación alineada a movimiento
-			if (Projectile.velocity.Length() > 0.1f)
-				Projectile.rotation = Projectile.velocity.ToRotation() + MathHelper.PiOver4;
+			// Iluminación
+			Lighting.AddLight(Projectile.Center, 0.7f, 0.3f, 1f);
 
-			Lighting.AddLight(Projectile.Center, 0.6f, 0.2f, 0.8f);
+			// Opacidad (fade in/out)
+			Projectile.Opacity = Utils.GetLerpValue(0f, 5f, LocalTimer, true) * 
+				Utils.GetLerpValue(120f, 110f, LocalTimer, true);
 		}
 
 		public override bool PreDraw(ref Color lightColor)
@@ -155,23 +225,53 @@ namespace Ame.Projectiles.Modes
 
 		public override bool? Colliding(Rectangle projHitbox, Rectangle targetHitbox)
 		{
-			// Sistema de colisión mejorado para mejor detección
-			if (projHitbox.Intersects(targetHitbox))
+			// Hitbox expandido
+			Rectangle expandedHitbox = projHitbox;
+			expandedHitbox.Inflate(30, 30);
+			if (expandedHitbox.Intersects(targetHitbox))
 				return true;
 
-			// Colisión por línea (útil para espadas rápidas)
-			Vector2 start = Projectile.Center;
-			Vector2 end = Projectile.Center + Projectile.velocity;
+			// Colisión de línea (filo de la espada)
 			float collisionPoint = 0f;
-			
-			return Collision.CheckAABBvLineCollision(
+			Vector2 start = Projectile.Center;
+			Vector2 end = Projectile.Center + Projectile.rotation.ToRotationVector2() * 100f;
+
+			if (Collision.CheckAABBvLineCollision(
 				targetHitbox.TopLeft(),
 				targetHitbox.Size(),
 				start,
 				end,
-				Projectile.width * 0.5f,
-				ref collisionPoint
-			);
+				40f,
+				ref collisionPoint))
+			{
+				return true;
+			}
+
+			// Fallback por distancia
+			return Vector2.Distance(Projectile.Center, targetHitbox.Center.ToVector2()) < 100f;
+		}
+
+		public override void OnHitNPC(NPC target, NPC.HitInfo hit, int damageDone)
+		{
+			// Efecto de impacto
+			for (int i = 0; i < 10; i++)
+			{
+				Dust dust = Dust.NewDustDirect(
+					Projectile.position,
+					Projectile.width,
+					Projectile.height,
+					DustID.Shadowflame,
+					0f, 0f, 100, default, 1.8f
+				);
+				dust.noGravity = true;
+				dust.velocity *= 3f;
+			}
+		}
+
+		public override Color? GetAlpha(Color lightColor)
+		{
+			// Color brillante como la Zenith
+			return new Color(255, 255, 255, (int)(255f * Projectile.Opacity));
 		}
 	}
 }

@@ -25,6 +25,24 @@ Projectiles: {
 	AmeRangedShot.DisplayName: Ame Ranged Shot
 	AmeSummonMinion.DisplayName: Ame Minion
 	AmeClone.DisplayName: Ame Clone
+	AmeBlade18.DisplayName: Ame Blade18
+	AmeBlade17.DisplayName: Ame Blade17
+	AmeBlade16.DisplayName: Ame Blade16
+	AmeBlade15.DisplayName: Ame Blade15
+	AmeBlade14.DisplayName: Ame Blade14
+	AmeBlade13.DisplayName: Ame Blade13
+	AmeBlade12.DisplayName: Ame Blade12
+	AmeBlade11.DisplayName: Ame Blade11
+	AmeBlade10.DisplayName: Ame Blade10
+	AmeBlade09.DisplayName: Ame Blade09
+	AmeBlade08.DisplayName: Ame Blade08
+	AmeBlade07.DisplayName: Ame Blade07
+	AmeBlade06.DisplayName: Ame Blade06
+	AmeBlade05.DisplayName: Ame Blade05
+	AmeBlade04.DisplayName: Ame Blade04
+	AmeBlade03.DisplayName: Ame Blade03
+	AmeBlade02.DisplayName: Ame Blade02
+	AmeBlade01.DisplayName: Ame Blade01
 }
 
 Buffs: {

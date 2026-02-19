@@ -10,35 +10,34 @@ using System;
 namespace Ame.Projectiles.Modes
 {
 	/// <summary>
-	/// Melee2 - EXACTAMENTE como la Zenith vanilla (AI_182_FinalFractal)
-	/// ai[0] = variación del arco (num3 en vanilla)
-	/// ai[1] = no usado
+	/// 🔥 CLASE BASE para las 18 espadas del Melee2
+	/// Usa el sistema EXACTO de Zenith vanilla (AI_182_FinalFractal)
 	/// </summary>
-	public class AmeZenithReal : ModProjectile
+	public abstract class AmeBladeBase : ModProjectile
 	{
 	public override void SetStaticDefaults()
 	{
 		ProjectileID.Sets.TrailCacheLength[Projectile.type] = 15;
-		ProjectileID.Sets.TrailingMode[Projectile.type] = 2;
-	}	public override void SetDefaults()
-	{
-		Projectile.width = 60;
-		Projectile.height = 60;
-		Projectile.friendly = true;
-		Projectile.DamageType = DamageClass.Melee;
-		Projectile.penetrate = -1;
-		Projectile.tileCollide = false;
-		Projectile.ignoreWater = true;
-		Projectile.extraUpdates = 1;
+		ProjectileID.Sets.TrailingMode[Projectile.type] = 2; // Guarda posición y rotación
+	}		public override void SetDefaults()
+		{
+			Projectile.width = 60;
+			Projectile.height = 60;
+			Projectile.friendly = true;
+			Projectile.DamageType = DamageClass.Melee;
+			Projectile.penetrate = -1;
+			Projectile.tileCollide = false;
+			Projectile.ignoreWater = true;
+			Projectile.extraUpdates = 1;
 		Projectile.usesLocalNPCImmunity = true;
 		Projectile.localNPCHitCooldown = 10;
 		Projectile.timeLeft = 300;
-		Projectile.hide = true; // 🔥 CRITICAL for vanilla rendering
-	}		public override void AI()
-		{
-			// 🔥 CÓDIGO EXACTO DE LA ZENITH VANILLA - AI_182_FinalFractal
-			
-			// Sonido inicial (solo primera vez)
+		// Projectile.hide removido para que las espadas sean visibles
+	}
+
+	public override void AI()
+	{
+		// 🔥 CÓDIGO EXACTO DE LA ZENITH VANILLA - AI_182_FinalFractal			// Sonido inicial (solo primera vez)
 			if (Projectile.localAI[1] == 0f)
 			{
 				Projectile.localAI[1] = 1f;
@@ -105,7 +104,10 @@ namespace Ame.Projectiles.Modes
 			
 			// num10: rotación final
 			float num10 = num7 + num4;
-			Projectile.rotation = num10 + (float)Math.PI / 2f;
+			
+			// 🔥 AJUSTE DIAGONAL - Tus sprites están a 45° (diagonal derecha arriba)
+			// Restamos 45° para que queden horizontales durante el movimiento
+			Projectile.rotation = num10 + (float)Math.PI / 2f - MathHelper.ToRadians(45f);
 			
 			// Posición final
 			Projectile.Center = vector2 + vector3;
@@ -117,12 +119,18 @@ namespace Ame.Projectiles.Modes
 			if (num3 < 0f)
 			{
 				Projectile.rotation = num5 + num6 * lerpValue2 * ((float)Math.PI * -2f) + num4;
-				Projectile.rotation += (float)Math.PI / 2f;
+				Projectile.rotation += (float)Math.PI / 2f - MathHelper.ToRadians(45f);
 				Projectile.spriteDirection = Projectile.direction = ((!(Projectile.velocity.X > 0f)) ? 1 : (-1));
 			}
 			
+			// 🎨 Variación aleatoria de escala (IMPORTANTE para variedad visual)
+			if (Projectile.localAI[0] == 1f)
+			{
+				Projectile.scale = 0.8f + Main.rand.NextFloat(0f, 0.4f); // 0.8 a 1.2
+			}
+			
 			// Efectos visuales (polvo) - solo durante primera mitad
-			if (num2 < 1f && Main.rand.NextBool(2))
+			if (num2 < 1f && Main.rand.NextBool(3))
 			{
 				Vector2 dustDirection = (Projectile.rotation - (float)Math.PI / 2f).ToRotationVector2();
 				Dust dust = Dust.NewDustDirect(
@@ -144,14 +152,59 @@ namespace Ame.Projectiles.Modes
 				Utils.GetLerpValue(120f, 115f, Projectile.localAI[0], clamped: true);
 		}
 
-	// 🔥 VANILLA RENDERING - Use FinalFractalHelper.Draw() with profile system
-	public override bool PreDraw(ref Color lightColor)
-	{
-		// Use vanilla Zenith drawing system with VertexStrip and shaders
-		FinalFractalHelper helper = new FinalFractalHelper();
-		helper.Draw(Projectile);
-		return false; // Skip default drawing
-	}		public override bool? Colliding(Rectangle projHitbox, Rectangle targetHitbox)
+		// 🔥 CUSTOM RENDERING - Dibuja la textura de la espada con trail
+		public override bool PreDraw(ref Color lightColor)
+		{
+			Main.instance.LoadProjectile(Projectile.type);
+			Texture2D texture = Terraria.GameContent.TextureAssets.Projectile[Projectile.type].Value;
+			
+			Vector2 drawOrigin = texture.Size() * 0.5f;
+			Vector2 drawPosition = Projectile.Center - Main.screenPosition;
+			
+			// Color con brillo y opacidad
+			Color drawColor = new Color(255, 255, 255, (int)(255f * Projectile.Opacity));
+			
+			// 🌈 TRAIL - Dibujar posiciones anteriores con fade
+			for (int i = 0; i < Projectile.oldPos.Length; i++)
+			{
+				if (Projectile.oldPos[i] == Vector2.Zero)
+					continue;
+				
+				float trailAlpha = (Projectile.oldPos.Length - i) / (float)Projectile.oldPos.Length;
+				Color trailColor = drawColor * trailAlpha * 0.5f;
+				
+				Vector2 trailDrawPos = Projectile.oldPos[i] + Projectile.Size * 0.5f - Main.screenPosition;
+				
+				Main.EntitySpriteDraw(
+					texture,
+					trailDrawPos,
+					null,
+					trailColor,
+					Projectile.oldRot[i],
+					drawOrigin,
+					Projectile.scale * (0.7f + trailAlpha * 0.3f),
+					SpriteEffects.None,
+					0
+				);
+			}
+			
+			// ✨ ESPADA PRINCIPAL - Dibujar la espada actual
+			Main.EntitySpriteDraw(
+				texture,
+				drawPosition,
+				null,
+				drawColor,
+				Projectile.rotation,
+				drawOrigin,
+				Projectile.scale,
+				SpriteEffects.None,
+				0
+			);
+			
+			return false; // No usar el draw por defecto
+		}
+
+		public override bool? Colliding(Rectangle projHitbox, Rectangle targetHitbox)
 		{
 			// Hitbox expandido
 			Rectangle expandedHitbox = projHitbox;

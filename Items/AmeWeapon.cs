@@ -4,6 +4,8 @@ using Terraria;
 using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.DataStructures;
+using Terraria.Graphics;
+using Terraria.WorldBuilding;
 using System;
 
 namespace Ame.Items
@@ -168,6 +170,39 @@ namespace Ame.Items
 			return closest;
 		}
 
+	// 🔥 VANILLA PORT - LimitPointToPlayerReachableArea (Simplified)
+	private void LimitPointToPlayerReachableArea(Player player, ref Vector2 pointPosition)
+	{
+		// Clamp to world bounds with 200 tile margin
+		float margin = 200f * 16f; // 200 tiles in pixels
+		pointPosition.X = MathHelper.Clamp(pointPosition.X, margin, Main.maxTilesX * 16f - margin);
+		pointPosition.Y = MathHelper.Clamp(pointPosition.Y, margin, Main.maxTilesY * 16f - margin);
+	}		// 🔥 VANILLA PORT - GetZenithTarget
+		private bool GetZenithTarget(Player player, Vector2 searchCenter, float maxDistance, out NPC targetNPC)
+		{
+			targetNPC = null;
+
+			float closestDistance = maxDistance;
+
+			for (int i = 0; i < Main.maxNPCs; i++)
+			{
+				NPC npc = Main.npc[i];
+
+				if (!npc.CanBeChasedBy(player))
+					continue;
+
+				float distance = Vector2.Distance(searchCenter, npc.Center);
+
+				if (distance < closestDistance)
+				{
+					closestDistance = distance;
+					targetNPC = npc;
+				}
+			}
+
+			return targetNPC != null;
+		}
+
 
 	public override bool Shoot(Player player, EntitySource_ItemUse_WithAmmo source,
 		Vector2 position, Vector2 velocity, int type, int damage, float knockback)
@@ -179,42 +214,52 @@ namespace Ame.Items
 		switch (CurrentMode)
 		{
 			case WeaponMode.Melee1:
-				// Sistema Zenith con progreso normalizado - AmeZenithBlade
+				// Sistema Zenith con interpolación exacta
 				int shotNumber = (player.itemAnimationMax - player.itemAnimation) / player.itemTime;
 				
-				Vector2 targetPos = Main.MouseWorld;
-				Vector2 directionToCursor = targetPos - player.MountedCenter;
-				
-				// Velocidad base (la mitad de la dirección al cursor, como Zenith)
-				Vector2 baseVelocity = directionToCursor / 2f;
+				// 🔥 CURSOR GUARDADO - Guardar SOLO en el primer disparo
+				Vector2 targetPos;
+				if (shotNumber == 0)
+				{
+					// Primer shot: guardar cursor en ai[2] (parte entera) para compartir entre proyectiles
+					targetPos = Main.MouseWorld;
+					Projectiles.Modes.AmeZenithBlade.SharedCursorX = targetPos.X;
+					Projectiles.Modes.AmeZenithBlade.SharedCursorY = targetPos.Y;
+				}
+				else
+				{
+					// Shots 2-6: usar cursor guardado
+					targetPos = new Vector2(Projectiles.Modes.AmeZenithBlade.SharedCursorX, 
+											Projectiles.Modes.AmeZenithBlade.SharedCursorY);
+				}
 				
 				// Variación del arco aleatorio (-100 a 100)
 				float arcVariation = Main.rand.Next(-100, 101);
 				
-				// DISPARO 1: Directo
-				if (shotNumber == 0)
-				{
-					// Primera espada va directa
-				}
-				// DISPAROS 2-5: Buscar enemigos o dispersión
-				else if (shotNumber >= 1)
+				// Velocity codifica dirección de órbita (varía por shot)
+				Vector2 velocityDirection = (targetPos - player.MountedCenter).SafeNormalize(Vector2.Zero);
+				
+				// DISPAROS 2-6: Variar la dirección de órbita pero MISMO destino
+				if (shotNumber >= 1)
 				{
 					NPC target = FindNearestEnemy(targetPos, 400f);
 					
 					if (target != null)
 					{
-						directionToCursor = target.Center - player.MountedCenter;
-						baseVelocity = directionToCursor / 2f;
+						velocityDirection = (target.Center - player.MountedCenter).SafeNormalize(Vector2.Zero);
 					}
 					else
 					{
-						// Dispersión circular aleatoria
-						directionToCursor += Main.rand.NextVector2Circular(150f, 150f);
-						baseVelocity = directionToCursor / 2f;
+						// Dispersión en la dirección de órbita
+						float angleVariation = Main.rand.NextFloat(-0.5f, 0.5f);
+						velocityDirection = velocityDirection.RotatedBy(angleVariation);
 					}
 				}
 				
-				// Crear proyectil con sistema de progreso normalizado
+				// Velocidad codifica dirección de órbita
+				Vector2 baseVelocity = velocityDirection * 10f;
+				
+				// Crear proyectil
 				Projectile.NewProjectile(
 					source,
 					player.MountedCenter,
@@ -229,54 +274,81 @@ namespace Ame.Items
 				return false;
 
 			case WeaponMode.Melee2:
-				// Sistema Zenith REAL - AI_182_FinalFractal (código vanilla adaptado)
-				int shotNumber2 = (player.itemAnimationMax - player.itemAnimation) / player.itemTime;
-				
-				Vector2 targetPos2 = Main.MouseWorld;
-				Vector2 directionToCursor2 = targetPos2 - player.MountedCenter;
-				
-				// Velocidad base (la mitad de la dirección al cursor, como Zenith)
-				Vector2 baseVelocity2 = directionToCursor2 / 2f;
-				
-				// Variación del arco aleatorio (-100 a 100)
-				float arcVariation2 = Main.rand.Next(-100, 101);
-				
-				// DISPARO 1: Directo
-				if (shotNumber2 == 0)
+				// 🔥 ZENITH VANILLA PORT 1:1
+				int num164 = (player.itemAnimationMax - player.itemAnimation) / player.itemTime;
+
+				// 🔥 Perfil de textura/color (CRITICAL)
+				int profile = FinalFractalHelper.GetRandomProfileIndex();
+
+				if (num164 == 0)
+					profile = 4956; // primera espada siempre Zenith base
+
+				// 🔥 Limitar cursor al área alcanzable (CRITICAL)
+				Vector2 mousePos = Main.MouseWorld;
+				LimitPointToPlayerReachableArea(player, ref mousePos);
+
+				Vector2 direction = mousePos - player.MountedCenter;
+
+				// 🔥 Sistema de targeting exacto de vanilla
+				if (num164 == 1 || num164 == 2)
 				{
-					// Primera espada va directa
-				}
-				// DISPAROS 2-5: Buscar enemigos o dispersión
-				else if (shotNumber2 >= 1)
-				{
-					NPC target2 = FindNearestEnemy(targetPos2, 400f);
-					
-					if (target2 != null)
-					{
-						directionToCursor2 = target2.Center - player.MountedCenter;
-						baseVelocity2 = directionToCursor2 / 2f;
-					}
-					else
-					{
-						// Dispersión circular aleatoria
-						directionToCursor2 += Main.rand.NextVector2Circular(150f, 150f);
-						baseVelocity2 = directionToCursor2 / 2f;
-					}
-				}
-				
-				// Crear proyectil con sistema Zenith REAL
-				Projectile.NewProjectile(
-					source,
-					player.MountedCenter,
-					baseVelocity2,
-					ModContent.ProjectileType<Projectiles.Modes.AmeZenithReal>(),
-					damage,
-					knockback,
-					player.whoAmI,
-					arcVariation2,  // ai[0] - variación del arco
-					0f              // ai[1] - perfil visual
-				);
-				return false;
+					NPC target;
+					bool found = GetZenithTarget(player, mousePos, 400f, out target);
+
+					if (found)
+						direction = target.Center - player.MountedCenter;
+
+					bool applySpread = num164 == 2;
+
+					if (num164 == 1 && !found)
+						applySpread = true;
+
+					if (applySpread)
+					direction += Main.rand.NextVector2Circular(150f, 150f);
+			}
+
+			Vector2 projectileVelocity = direction / 2f;
+			float arc = Main.rand.Next(-100, 101);
+
+			// 🔥 ARRAY DE LAS 18 ESPADAS - Selección RANDOM como Zenith vanilla
+			int[] swordTypes = new int[]
+			{
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade01>(),
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade02>(),
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade03>(),
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade04>(),
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade05>(),
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade06>(),
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade07>(),
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade08>(),
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade09>(),
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade10>(),
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade11>(),
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade12>(),
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade13>(),
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade14>(),
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade15>(),
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade16>(),
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade17>(),
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade18>()
+			};
+
+			// Seleccionar espada aleatoria
+			int randomSwordType = swordTypes[Main.rand.Next(swordTypes.Length)];
+
+			// 🔥 Spawn con PROFILE correcto y tipo de espada RANDOM
+			Projectile.NewProjectile(
+				source,
+				player.MountedCenter,
+				projectileVelocity,
+				randomSwordType, // ← RANDOM entre las 18 espadas
+				damage,
+				knockback,
+				player.whoAmI,
+				arc,      // ai[0] - variación del arco
+				profile   // ai[1] - PROFILE (CRITICAL)
+			);
+			return false;
 
 			case WeaponMode.Magic:
 					if (player.statMana >= 10)
