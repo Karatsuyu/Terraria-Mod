@@ -79,18 +79,19 @@ namespace Ame.Projectiles.Modes
 		// Esto hace la órbita completa: empieza atrás (π), va hacia adelante, y regresa atrás (3π)
 		float num7 = num5 + num6 * lerpValue2 * ((float)Math.PI * 2f);
 		
-		// 🔥 RADIO DE ÓRBITA FIJO - No depende de distancia al cursor
-		// Empieza pequeño (junto al jugador), crece al medio, se reduce al final
-		float baseRadius = 80f; // Radio base de la órbita
+		// Radio de órbita FIJO (no depende del cursor, solo de la mecánica)
+		float baseRadius = 80f;
 		float radiusGrowth = Utils.GetLerpValue(0.5f, 1f, lerpValue2, clamped: true) * 40f;
 		float num8 = baseRadius + radiusGrowth;
 		
-		// 🔥 CENTRO DE ÓRBITA = JUGADOR SIEMPRE
-		// El centro de la órbita es el jugador, no un punto intermedio
-		Vector2 vector = mountedCenter;
+		// 🔥 CENTRO DE ÓRBITA: Se desplaza jugador → cursor → jugador
+		// Usa sin() para que en progreso 0.0 = jugador, 0.5 = cursor, 1.0 = jugador
+		// Esto hace que las espadas CONVERJAN en la posición del cursor
+		float travelProgress = (float)Math.Sin(lerpValue2 * Math.PI); // 0 → 1 → 0
+		Vector2 cursorOffset = Projectile.velocity; // velocity = (mousePos - player) / 2
+		Vector2 vector = mountedCenter + cursorOffset * travelProgress;
 		
-		// spinningpoint: offset circular rotado
-		// num7 va de π a 3π (un ciclo completo) = empieza detrás, va al frente, regresa atrás
+		// spinningpoint: offset circular rotado (órbitas intactas)
 		Vector2 spinningpoint = new Vector2(1f, 0f).RotatedBy(num7) * 
 			new Vector2(num8, num3 * MathHelper.Lerp(2f, 1f, lerpValue));
 		
