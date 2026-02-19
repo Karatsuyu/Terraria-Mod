@@ -36,7 +36,7 @@ namespace Ame.Items
 		Item.height = 40;
 		
 		// Daño base del arma
-		Item.damage = 200;
+		Item.damage = 1000;
 		Item.DamageType = DamageClass.Melee;
 		
 		// Sistema Zenith: 6 espadas por swing
@@ -55,13 +55,13 @@ namespace Ame.Items
 		Item.shootSpeed = 16f;
 	}		public override void ModifyWeaponDamage(Player player, ref StatModifier damage)
 		{
-			// Multiplicadores de daño según modo (se aplican al daño base de 200)
+			// Multiplicadores de daño según modo (se aplican al daño base de 1000)
 			switch (CurrentMode)
 			{
 				case WeaponMode.Melee1:
 				case WeaponMode.Melee2:
 					Item.DamageType = DamageClass.Melee;
-					damage *= 1.0f;  // 100% del daño (200 daño)
+					damage *= 1.0f;  // 100% del daño (1000 daño)
 					break;
 				case WeaponMode.Magic:
 					Item.DamageType = DamageClass.Magic;

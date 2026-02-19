@@ -37,118 +37,105 @@ namespace Ame.Projectiles.Modes
 
 	public override void AI()
 	{
-		// 🔥 CÓDIGO EXACTO DE LA ZENITH VANILLA - AI_182_FinalFractal			// Sonido inicial (solo primera vez)
-			if (Projectile.localAI[1] == 0f)
-			{
-				Projectile.localAI[1] = 1f;
-				SoundEngine.PlaySound(SoundID.Item1, Projectile.Center);
-			}
+		if (Projectile.localAI[1] == 0f)
+		{
+			Projectile.localAI[1] = 1f;
+			SoundEngine.PlaySound(SoundID.Item1, Projectile.Center);
+		}
 
-			Player player = Main.player[Projectile.owner];
-			Vector2 mountedCenter = player.MountedCenter;
-			
-			// lerpValue: factor de velocidad basado en velocity.Length()
-			float lerpValue = Utils.GetLerpValue(900f, 0f, Projectile.velocity.Length() * 2f, clamped: true);
-			float num = MathHelper.Lerp(0.7f, 2f, lerpValue);
-			Projectile.localAI[0] += num;
-			
-			// Matar después de 120 frames
-			if (Projectile.localAI[0] >= 120f)
-			{
-				Projectile.Kill();
-				return;
-			}
-			
-		// lerpValue2: progreso normalizado (0 a 1)
+		Player player = Main.player[Projectile.owner];
+		Vector2 mountedCenter = player.MountedCenter;
+		
+		float lerpValue = Utils.GetLerpValue(900f, 0f, Projectile.velocity.Length() * 2f, clamped: true);
+		float num = MathHelper.Lerp(0.7f, 2f, lerpValue);
+		Projectile.localAI[0] += num;
+		
+		if (Projectile.localAI[0] >= 120f)
+		{
+			Projectile.Kill();
+			return;
+		}
+		
 		float lerpValue2 = Utils.GetLerpValue(0f, 1f, Projectile.localAI[0] / 60f, clamped: true);
 		float num2 = Projectile.localAI[0] / 60f;
-		
-		// num3: variación del arco (ai[0])
 		float num3 = Projectile.ai[0];
-		
-		// num4: rotación de la velocidad (dirección hacia cursor)
 		float num4 = Projectile.velocity.ToRotation();
-		
-		// num5: π
 		float num5 = (float)Math.PI;
-		
-		// num6: dirección (1 o -1 según velocity.X)
 		float num6 = ((Projectile.velocity.X > 0f) ? 1 : (-1));
 		
-		// num7: ángulo de rotación circular (π + dirección * progreso * 2π)
-		// Esto hace la órbita completa: empieza atrás (π), va hacia adelante, y regresa atrás (3π)
+		// ====== ÓRBITA 100% VANILLA (copiada de AmeZenithReal) ======
 		float num7 = num5 + num6 * lerpValue2 * ((float)Math.PI * 2f);
 		
-		// Radio de órbita FIJO (no depende del cursor, solo de la mecánica)
-		float baseRadius = 80f;
-		float radiusGrowth = Utils.GetLerpValue(0.5f, 1f, lerpValue2, clamped: true) * 40f;
-		float num8 = baseRadius + radiusGrowth;
+		float num8 = Projectile.velocity.Length() + Utils.GetLerpValue(0.5f, 1f, lerpValue2, clamped: true) * 40f;
+		float num9 = 60f;
+		if (num8 < num9)
+			num8 = num9;
 		
-		// 🔥 CENTRO DE ÓRBITA: Se desplaza jugador → cursor → jugador
-		// Usa sin() para que en progreso 0.0 = jugador, 0.5 = cursor, 1.0 = jugador
-		// Esto hace que las espadas CONVERJAN en la posición del cursor
-		float travelProgress = (float)Math.Sin(lerpValue2 * Math.PI); // 0 → 1 → 0
-		Vector2 cursorOffset = Projectile.velocity; // velocity = (mousePos - player) / 2
-		Vector2 vector = mountedCenter + cursorOffset * travelProgress;
+		Vector2 vector = mountedCenter + Projectile.velocity;
 		
-		// spinningpoint: offset circular rotado (órbitas intactas)
 		Vector2 spinningpoint = new Vector2(1f, 0f).RotatedBy(num7) * 
 			new Vector2(num8, num3 * MathHelper.Lerp(2f, 1f, lerpValue));
 		
-		// vector2: posición con offset circular rotada en la dirección del cursor
 		Vector2 vector2 = vector + spinningpoint.RotatedBy(num4);
 		
-		// vector3: offset de "swing" adicional (solo al inicio para impulso)
 		Vector2 vector3 = (1f - Utils.GetLerpValue(0f, 0.5f, lerpValue2, clamped: true)) * 
-			new Vector2((float)((Projectile.velocity.X > 0f) ? 1 : (-1)) * (0f - num8) * 0.1f, (0f - Projectile.ai[0]) * 0.3f);			// num10: rotación final
-			float num10 = num7 + num4;
-			
-			// 🔥 AJUSTE DIAGONAL - Tus sprites están a 45° (diagonal derecha arriba)
-			// Restamos 45° para que queden horizontales durante el movimiento
-			Projectile.rotation = num10 + (float)Math.PI / 2f - MathHelper.ToRadians(45f);
-			
-			// Posición final
-			Projectile.Center = vector2 + vector3;
-			
-			// Dirección del sprite
-			Projectile.spriteDirection = Projectile.direction = ((Projectile.velocity.X > 0f) ? 1 : (-1));
-			
-			// Invertir rotación si num3 (arcVariation) es negativo
-			if (num3 < 0f)
-			{
-				Projectile.rotation = num5 + num6 * lerpValue2 * ((float)Math.PI * -2f) + num4;
-				Projectile.rotation += (float)Math.PI / 2f - MathHelper.ToRadians(45f);
-				Projectile.spriteDirection = Projectile.direction = ((!(Projectile.velocity.X > 0f)) ? 1 : (-1));
-			}
-			
-			// 🎨 Variación aleatoria de escala (IMPORTANTE para variedad visual)
-			if (Projectile.localAI[0] == 1f)
-			{
-				Projectile.scale = 0.8f + Main.rand.NextFloat(0f, 0.4f); // 0.8 a 1.2
-			}
-			
-			// Efectos visuales (polvo) - solo durante primera mitad
-			if (num2 < 1f && Main.rand.NextBool(3))
-			{
-				Vector2 dustDirection = (Projectile.rotation - (float)Math.PI / 2f).ToRotationVector2();
-				Dust dust = Dust.NewDustDirect(
-					Projectile.Center + dustDirection * 30f,
-					Projectile.width / 2,
-					Projectile.height / 2,
-					DustID.Shadowflame,
-					0f, 0f, 100, default, 1.5f
-				);
-				dust.noGravity = true;
-				dust.velocity = dustDirection * 2f + player.velocity;
-			}
-			
-		// Iluminación
-		Lighting.AddLight(Projectile.Center, 0.7f, 0.3f, 1f);
+			new Vector2((float)((Projectile.velocity.X > 0f) ? 1 : (-1)) * (0f - num8) * 0.1f, (0f - Projectile.ai[0]) * 0.3f);
 		
-		// 🔥 Opacidad (fade in/out) - Se esconde más rápido al regresar al jugador
-		float fadeIn = Utils.GetLerpValue(0f, 5f, Projectile.localAI[0], clamped: true);
-		float fadeOut = Utils.GetLerpValue(120f, 100f, Projectile.localAI[0], clamped: true); // Empieza a desvanecerse en frame 100
-		Projectile.Opacity = fadeIn * fadeOut;
+		// Posición orbital vanilla pura
+		Vector2 vanillaPos = vector2 + vector3;
+		
+		// ====== ROTACIÓN 100% VANILLA + ajuste -45° para sprites diagonales ======
+		float num10 = num7 + num4;
+		Projectile.rotation = num10 + (float)Math.PI / 2f - MathHelper.ToRadians(45f);
+		Projectile.spriteDirection = Projectile.direction = ((Projectile.velocity.X > 0f) ? 1 : (-1));
+		
+		if (num3 < 0f)
+		{
+			Projectile.rotation = num5 + num6 * lerpValue2 * ((float)Math.PI * -2f) + num4;
+			Projectile.rotation += (float)Math.PI / 2f - MathHelper.ToRadians(45f);
+			Projectile.spriteDirection = Projectile.direction = ((!(Projectile.velocity.X > 0f)) ? 1 : (-1));
+		}
+		
+		// ====== SPAWN / HIDE ======
+		// Punto detrás del jugador (opuesto al cursor, 20px detrás)
+		Vector2 behindPlayer = mountedCenter + new Vector2(-num6 * 20f, 8f);
+		
+		// Curva de vida completa: 0→1→1→0
+		// fade in durante los primeros 15 frames, fade out durante los últimos 15
+		float spawnBlend = Utils.GetLerpValue(0f, 15f, Projectile.localAI[0], clamped: true);
+		float hideBlend = Utils.GetLerpValue(120f, 105f, Projectile.localAI[0], clamped: true);
+		float lifeBlend = spawnBlend * hideBlend; // 0→1 al inicio, 1→0 al final
+		
+		// Suavizar la curva
+		lifeBlend = lifeBlend * lifeBlend * (3f - 2f * lifeBlend);
+		
+		// Interpolar posición: behindPlayer ↔ vanillaPos
+		Projectile.Center = Vector2.Lerp(behindPlayer, vanillaPos, lifeBlend);
+		
+		// Opacidad igual que vanilla
+		Projectile.Opacity = Utils.GetLerpValue(0f, 5f, Projectile.localAI[0], clamped: true) * 
+			Utils.GetLerpValue(120f, 115f, Projectile.localAI[0], clamped: true);
+		
+		// Escala aleatoria (solo primera vez)
+		if (Projectile.localAI[0] <= num + 0.1f)
+			Projectile.scale = 0.8f + Main.rand.NextFloat(0f, 0.4f);
+		
+		// Polvo visual
+		if (num2 < 1f && Main.rand.NextBool(3))
+		{
+			Vector2 dustDirection = (Projectile.rotation - (float)Math.PI / 2f).ToRotationVector2();
+			Dust dust = Dust.NewDustDirect(
+				Projectile.Center + dustDirection * 30f,
+				Projectile.width / 2,
+				Projectile.height / 2,
+				DustID.Shadowflame,
+				0f, 0f, 100, default, 1.5f
+			);
+			dust.noGravity = true;
+			dust.velocity = dustDirection * 2f + player.velocity;
+		}
+		
+		Lighting.AddLight(Projectile.Center, 0.7f, 0.3f, 1f);
 	}		// 🔥 CUSTOM RENDERING - Dibuja la textura de la espada con trail
 		public override bool PreDraw(ref Color lightColor)
 		{
