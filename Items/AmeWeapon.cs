@@ -170,11 +170,11 @@ namespace Ame.Items
 			return closest;
 		}
 
-	// 🔥 VANILLA PORT - LimitPointToPlayerReachableArea (Simplified)
+	// 🔥 VANILLA PORT - LimitPointToPlayerReachableArea (Menos agresiva para evitar problemas en Inframundo)
 	private void LimitPointToPlayerReachableArea(Player player, ref Vector2 pointPosition)
 	{
-		// Clamp to world bounds with 200 tile margin
-		float margin = 200f * 16f; // 200 tiles in pixels
+		// Clamp to world bounds with smaller margin to avoid issues in Underworld
+		float margin = 50f * 16f; // Solo 50 tiles de margen en vez de 200
 		pointPosition.X = MathHelper.Clamp(pointPosition.X, margin, Main.maxTilesX * 16f - margin);
 		pointPosition.Y = MathHelper.Clamp(pointPosition.Y, margin, Main.maxTilesY * 16f - margin);
 	}		// 🔥 VANILLA PORT - GetZenithTarget
@@ -283,9 +283,7 @@ namespace Ame.Items
 				if (num164 == 0)
 					profile = 4956; // primera espada siempre Zenith base
 
-				// 🔥 Limitar cursor al área alcanzable (CRITICAL)
 				Vector2 mousePos = Main.MouseWorld;
-				LimitPointToPlayerReachableArea(player, ref mousePos);
 
 				Vector2 direction = mousePos - player.MountedCenter;
 

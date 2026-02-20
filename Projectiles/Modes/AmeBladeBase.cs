@@ -35,6 +35,12 @@ namespace Ame.Projectiles.Modes
 		// Projectile.hide removido para que las espadas sean visibles
 	}
 
+	// 🔥 CRITICAL: Desactivar el movimiento automático de Terraria
+	// Sin esto, Terraria aplica position += velocity DESPUÉS de cada AI(),
+	// desplazando la espada +velocity cada frame (300+ pixels!).
+	// Esto causaba: overshoot, no salir del jugador, no esconderse detrás.
+	public override bool ShouldUpdatePosition() => false;
+
 	public override void AI()
 	{
 		if (Projectile.localAI[1] == 0f)
@@ -46,6 +52,7 @@ namespace Ame.Projectiles.Modes
 		Player player = Main.player[Projectile.owner];
 		Vector2 mountedCenter = player.MountedCenter;
 		
+		// ====== TIEMPO (vanilla exacto) ======
 		float lerpValue = Utils.GetLerpValue(900f, 0f, Projectile.velocity.Length() * 2f, clamped: true);
 		float num = MathHelper.Lerp(0.7f, 2f, lerpValue);
 		Projectile.localAI[0] += num;
@@ -56,6 +63,7 @@ namespace Ame.Projectiles.Modes
 			return;
 		}
 		
+		// ====== PROGRESO (vanilla exacto) ======
 		float lerpValue2 = Utils.GetLerpValue(0f, 1f, Projectile.localAI[0] / 60f, clamped: true);
 		float num2 = Projectile.localAI[0] / 60f;
 		float num3 = Projectile.ai[0];
@@ -63,28 +71,30 @@ namespace Ame.Projectiles.Modes
 		float num5 = (float)Math.PI;
 		float num6 = ((Projectile.velocity.X > 0f) ? 1 : (-1));
 		
-		// ====== ÓRBITA 100% VANILLA (copiada de AmeZenithReal) ======
+		// ====== ÁNGULO DE ÓRBITA (vanilla exacto) ======
 		float num7 = num5 + num6 * lerpValue2 * ((float)Math.PI * 2f);
 		
+		// ====== RADIO (vanilla exacto) ======
 		float num8 = Projectile.velocity.Length() + Utils.GetLerpValue(0.5f, 1f, lerpValue2, clamped: true) * 40f;
-		float num9 = 60f;
-		if (num8 < num9)
-			num8 = num9;
+		if (num8 < 60f)
+			num8 = 60f;
 		
+		// ====== CENTRO (vanilla exacto) ======
 		Vector2 vector = mountedCenter + Projectile.velocity;
 		
+		// ====== SPINNINGPOINT (vanilla exacto) ======
 		Vector2 spinningpoint = new Vector2(1f, 0f).RotatedBy(num7) * 
 			new Vector2(num8, num3 * MathHelper.Lerp(2f, 1f, lerpValue));
 		
+		// ====== POSICIÓN (vanilla exacto) ======
 		Vector2 vector2 = vector + spinningpoint.RotatedBy(num4);
-		
 		Vector2 vector3 = (1f - Utils.GetLerpValue(0f, 0.5f, lerpValue2, clamped: true)) * 
 			new Vector2((float)((Projectile.velocity.X > 0f) ? 1 : (-1)) * (0f - num8) * 0.1f, (0f - Projectile.ai[0]) * 0.3f);
 		
-		// Posición orbital vanilla pura
-		Vector2 vanillaPos = vector2 + vector3;
+		// Posición final = 100% VANILLA, sin modificaciones
+		Projectile.Center = vector2 + vector3;
 		
-		// ====== ROTACIÓN 100% VANILLA + ajuste -45° para sprites diagonales ======
+		// ====== ROTACIÓN (vanilla + ajuste -45° para sprites diagonales) ======
 		float num10 = num7 + num4;
 		Projectile.rotation = num10 + (float)Math.PI / 2f - MathHelper.ToRadians(45f);
 		Projectile.spriteDirection = Projectile.direction = ((Projectile.velocity.X > 0f) ? 1 : (-1));
@@ -96,23 +106,7 @@ namespace Ame.Projectiles.Modes
 			Projectile.spriteDirection = Projectile.direction = ((!(Projectile.velocity.X > 0f)) ? 1 : (-1));
 		}
 		
-		// ====== SPAWN / HIDE ======
-		// Punto detrás del jugador (opuesto al cursor, 20px detrás)
-		Vector2 behindPlayer = mountedCenter + new Vector2(-num6 * 20f, 8f);
-		
-		// Curva de vida completa: 0→1→1→0
-		// fade in durante los primeros 15 frames, fade out durante los últimos 15
-		float spawnBlend = Utils.GetLerpValue(0f, 15f, Projectile.localAI[0], clamped: true);
-		float hideBlend = Utils.GetLerpValue(120f, 105f, Projectile.localAI[0], clamped: true);
-		float lifeBlend = spawnBlend * hideBlend; // 0→1 al inicio, 1→0 al final
-		
-		// Suavizar la curva
-		lifeBlend = lifeBlend * lifeBlend * (3f - 2f * lifeBlend);
-		
-		// Interpolar posición: behindPlayer ↔ vanillaPos
-		Projectile.Center = Vector2.Lerp(behindPlayer, vanillaPos, lifeBlend);
-		
-		// Opacidad igual que vanilla
+		// Opacidad: vanilla fade in/out
 		Projectile.Opacity = Utils.GetLerpValue(0f, 5f, Projectile.localAI[0], clamped: true) * 
 			Utils.GetLerpValue(120f, 115f, Projectile.localAI[0], clamped: true);
 		
