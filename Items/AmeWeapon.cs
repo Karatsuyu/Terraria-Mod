@@ -6,6 +6,7 @@ using Terraria.ModLoader;
 using Terraria.DataStructures;
 using Terraria.Graphics;
 using Terraria.WorldBuilding;
+using ReLogic.Content;
 using System;
 
 namespace Ame.Items
@@ -25,10 +26,21 @@ namespace Ame.Items
 	public WeaponMode CurrentMode = WeaponMode.Melee1;
 	private bool justChangedMode = false;
 
+	// 🔥 Icono animado para Melee2
+	private static Asset<Texture2D> melee2Texture;
+	private int melee2FrameCounter = 0;
+	private int melee2Frame = 0;
+	private int melee2FrameCount = 1; // Se calcula automáticamente al cargar la textura
+	private int melee2FrameSpeed = 5; // Ticks por frame de animación
+
 	public override void SetStaticDefaults()
 		{
-			// DisplayName y Tooltip se manejan via archivos de localización
+			// Cargar textura animada del icono Melee2
+			melee2Texture = ModContent.Request<Texture2D>("Ame/Items/AmeWeapon_Melee2");
 		}
+
+	// Textura base guardada para poder restaurar
+	private static Asset<Texture2D> baseTexture;
 
 	public override void SetDefaults()
 	{
@@ -309,7 +321,7 @@ namespace Ame.Items
 			Vector2 projectileVelocity = direction / 2f;
 			float arc = Main.rand.Next(-100, 101);
 
-			// 🔥 ARRAY DE LAS 18 ESPADAS - Selección RANDOM como Zenith vanilla
+			// 🔥 ARRAY DE LAS 19 ESPADAS - Selección RANDOM como Zenith vanilla
 			int[] swordTypes = new int[]
 			{
 				ModContent.ProjectileType<Projectiles.Modes.AmeBlade01>(),
@@ -329,7 +341,8 @@ namespace Ame.Items
 				ModContent.ProjectileType<Projectiles.Modes.AmeBlade15>(),
 				ModContent.ProjectileType<Projectiles.Modes.AmeBlade16>(),
 				ModContent.ProjectileType<Projectiles.Modes.AmeBlade17>(),
-				ModContent.ProjectileType<Projectiles.Modes.AmeBlade18>()
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade18>(),
+				ModContent.ProjectileType<Projectiles.Modes.AmeBlade19>()
 			};
 
 			// Seleccionar espada aleatoria
@@ -392,6 +405,148 @@ namespace Ame.Items
 				OverrideColor = GetModeColor()
 			};
 			tooltips.Add(modeLine);
+		}
+
+		// 🔥 ICONO ANIMADO - Actualizar frame de animación
+		public override void Update(ref float gravity, ref float maxFallSpeed)
+		{
+			// Animar solo cuando está en el mundo (drop)
+			if (CurrentMode == WeaponMode.Melee2)
+				UpdateMelee2Animation();
+		}
+
+		public override void UpdateInventory(Player player)
+		{
+			// Animar en el inventario
+			if (CurrentMode == WeaponMode.Melee2)
+				UpdateMelee2Animation();
+			
+			// Actualizar textura para mods de espalda
+			UpdateItemTexture();
+		}
+
+		private void UpdateMelee2Animation()
+		{
+			melee2FrameCounter++;
+			if (melee2FrameCounter >= melee2FrameSpeed)
+			{
+				melee2FrameCounter = 0;
+				melee2Frame++;
+				if (melee2Frame >= melee2FrameCount)
+					melee2Frame = 0;
+			}
+		}
+
+		// 🔥 DIBUJO EN INVENTARIO - Icono animado para Melee2
+		public override bool PreDrawInInventory(SpriteBatch spriteBatch, Vector2 position, Rectangle frame, Color drawColor, Color itemColor, Vector2 origin, float scale)
+		{
+			if (CurrentMode != WeaponMode.Melee2 || melee2Texture == null || !melee2Texture.IsLoaded)
+				return true; // Dibujar icono normal para otros modos
+
+			Texture2D tex = melee2Texture.Value;
+			
+			// Calcular número de frames basado en las dimensiones (120x120 por frame)
+			int frameHeight = tex.Width; // Cada frame es cuadrado (120x120)
+			melee2FrameCount = tex.Height / frameHeight;
+			if (melee2FrameCount < 1) melee2FrameCount = 1;
+
+			// Rectángulo del frame actual
+			Rectangle sourceRect = new Rectangle(0, melee2Frame * frameHeight, tex.Width, frameHeight);
+			
+			// Escalar para llenar el slot de inventario
+			// 'scale' de Terraria está calculado para un item de Item.width x Item.height (40x40)
+			// Nuestro frame es 120x120, así que Terraria no sabe que es más grande.
+			// Usamos: finalScale = scale (que ya llena el slot para 40px) sin reducir por frameHeight
+			float finalScale = scale * 0.85f;
+			
+			// Centrar en la posición del slot
+			Vector2 drawOrigin = new Vector2(tex.Width / 2f, frameHeight / 2f);
+
+			spriteBatch.Draw(
+				tex,
+				position,
+				sourceRect,
+				drawColor,
+				0f,
+				drawOrigin,
+				finalScale,
+				SpriteEffects.None,
+				0f
+			);
+
+			return false; // No dibujar el icono normal
+		}
+
+		// 🔥 Mantener la textura principal actualizada para mods externos (ej: arma en espalda)
+		// Esto reemplaza la textura que Terraria usa internamente para dibujar el item
+		public override void PostUpdate()
+		{
+			UpdateItemTexture();
+		}
+
+		// Instancia persistente de la animación (NO recrear cada tick)
+		private static Terraria.DataStructures.DrawAnimationVertical melee2DrawAnim;
+
+		private void UpdateItemTexture()
+		{
+			if (CurrentMode == WeaponMode.Melee2 && melee2Texture != null && melee2Texture.IsLoaded)
+			{
+				// Reemplazar la textura principal del item con el spritesheet animado
+				Terraria.GameContent.TextureAssets.Item[Item.type] = melee2Texture;
+				
+				// Crear la animación UNA SOLA VEZ (si se recrea cada tick, el frame se resetea a 0)
+				if (melee2DrawAnim == null)
+				{
+					Texture2D tex = melee2Texture.Value;
+					int frameHeight = tex.Width; // 120px (cada frame es cuadrado)
+					int totalFrames = tex.Height / frameHeight;
+					if (totalFrames < 1) totalFrames = 1;
+					melee2DrawAnim = new Terraria.DataStructures.DrawAnimationVertical(melee2FrameSpeed, totalFrames);
+				}
+				
+				// Asignar la instancia persistente (Terraria llama GetFrame() que avanza la animación)
+				Main.itemAnimations[Item.type] = melee2DrawAnim;
+			}
+			else
+			{
+				// Restaurar textura y animación original
+				if (baseTexture == null)
+					baseTexture = ModContent.Request<Texture2D>(Texture);
+				Terraria.GameContent.TextureAssets.Item[Item.type] = baseTexture;
+				Main.itemAnimations[Item.type] = null;
+			}
+		}
+
+		// 🔥 DIBUJO EN MUNDO - Icono animado cuando el arma está tirada
+		public override bool PreDrawInWorld(SpriteBatch spriteBatch, Color lightColor, Color alphaColor, ref float rotation, ref float scale, int whoAmI)
+		{
+			if (CurrentMode != WeaponMode.Melee2 || melee2Texture == null || !melee2Texture.IsLoaded)
+				return true;
+
+			Texture2D tex = melee2Texture.Value;
+			
+			int frameHeight = tex.Width;
+			melee2FrameCount = tex.Height / frameHeight;
+			if (melee2FrameCount < 1) melee2FrameCount = 1;
+
+			Rectangle sourceRect = new Rectangle(0, melee2Frame * frameHeight, tex.Width, frameHeight);
+			
+			Vector2 drawOrigin = new Vector2(tex.Width / 2f, frameHeight / 2f);
+			Vector2 drawPos = Item.Center - Main.screenPosition;
+
+			spriteBatch.Draw(
+				tex,
+				drawPos,
+				sourceRect,
+				lightColor,
+				rotation,
+				drawOrigin,
+				scale,
+				SpriteEffects.None,
+				0f
+			);
+
+			return false;
 		}
 	}
 }

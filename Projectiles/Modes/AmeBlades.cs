@@ -55,4 +55,7 @@ namespace Ame.Projectiles.Modes
 	
 	// 🔥 Espada 18 - 120x120px
 	public class AmeBlade18 : AmeBladeBase { }
+	
+	// 🔥 Espada 19 - Principal
+	public class AmeBlade19 : AmeBladeBase { }
 }
