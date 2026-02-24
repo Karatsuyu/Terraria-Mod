@@ -5,6 +5,8 @@ using Terraria.ID;
 using Terraria.ModLoader;
 using Terraria.Audio;
 using Terraria.GameContent;
+using Terraria.Graphics;
+using Terraria.Graphics.Shaders;
 using System;
 
 namespace Ame.Projectiles.Modes
@@ -12,14 +14,25 @@ namespace Ame.Projectiles.Modes
 	/// <summary>
 	/// CLASE BASE para las 19 espadas del Melee2
 	/// Orbit = 100% vanilla Zenith (AI_182_FinalFractal)
-	/// Visual FX = trail rojo/negro en punta + humo estilo Galaxia
-	/// SIN SpriteBatch.End/Begin (causa crash silencioso en tModLoader)
+	/// Visual FX = VertexStrip ribbon trail (punta) + VertexStrip smoke cloud (cuerpo)
+	/// Colores: rojo o negro aleatorio por espada
 	/// </summary>
 	public abstract class AmeBladeBase : ModProjectile
 	{
 		// Color aleatorio por espada: rojo o negro (decidido al spawn)
 		private bool _colorInitialized;
 		private bool _isRedVariant = true;
+
+		// VertexStrip para trail de punta (ribbon fino y brillante)
+		private VertexStrip _tipStrip = new VertexStrip();
+		// VertexStrip para humo/nube detrás de la espada (ancho y difuso)
+		private VertexStrip _smokeStrip = new VertexStrip();
+
+		// Posiciones de la punta guardadas manualmente (Projectile.oldPos guarda el centro)
+		private const int TIP_TRAIL_LENGTH = 24;
+		private Vector2[] _tipOldPos = new Vector2[TIP_TRAIL_LENGTH];
+		private float[] _tipOldRot = new float[TIP_TRAIL_LENGTH];
+		private int _tipTrailIndex = 0;
 
 		public override void SetStaticDefaults()
 		{
@@ -45,7 +58,7 @@ namespace Ame.Projectiles.Modes
 		// CRITICAL: Desactivar position += velocity automático
 		public override bool ShouldUpdatePosition() => false;
 
-		// Dirección de la punta de la espada (para spawn de dust)
+		// Dirección de la punta de la espada
 		private Vector2 BladeDirection => (Projectile.rotation - MathHelper.ToRadians(45f)).ToRotationVector2();
 		private Vector2 BladeTip => Projectile.Center + BladeDirection * (40f * Projectile.scale);
 
@@ -130,10 +143,9 @@ namespace Ame.Projectiles.Modes
 				Projectile.scale = 0.8f + Main.rand.NextFloat(0f, 0.4f);
 
 			// ====================================================================
-			// EFECTOS VISUALES - Solo Dust, no afectan gameplay
+			// REGISTRAR POSICIÓN DE LA PUNTA para el ribbon trail
 			// ====================================================================
-			if (Projectile.Opacity > 0.2f)
-				SpawnVisualDust(num2, player);
+			RecordTipPosition();
 
 			// Iluminación
 			if (_isRedVariant)
@@ -141,7 +153,6 @@ namespace Ame.Projectiles.Modes
 			else
 				Lighting.AddLight(Projectile.Center, 0.35f, 0.05f, 0.5f);
 
-			// Luz adicional en la punta
 			Vector2 tip = BladeTip;
 			if (_isRedVariant)
 				Lighting.AddLight(tip, 1.0f, 0.3f, 0.1f);
@@ -150,182 +161,47 @@ namespace Ame.Projectiles.Modes
 		}
 
 		/// <summary>
-		/// Genera TODAS las partículas visuales por frame.
+		/// Guarda la posición de la punta en un buffer circular.
 		/// Se llama cada AI tick (2x por game tick por extraUpdates=1).
 		/// </summary>
-		private void SpawnVisualDust(float progress, Player player)
+		private void RecordTipPosition()
 		{
-			Vector2 tip = BladeTip;
-			Vector2 bladeDir = BladeDirection;
-			// Velocidad "hacia atrás" de la punta (opuesta a donde apunta la espada)
-			Vector2 backVel = -bladeDir * 2f;
-
-			// ══════════════════════════════════════════════════════
-			// PUNTA: Rastro continuo de fuego/energía (CADA frame)
-			// Esto crea el trail persistente rojo o negro en la punta
-			// ══════════════════════════════════════════════════════
+			// Desplazar todas las posiciones una posición hacia atrás (más vieja)
+			for (int i = TIP_TRAIL_LENGTH - 1; i > 0; i--)
 			{
-				int tipDust = _isRedVariant ? DustID.Torch : DustID.PurpleTorch;
-				for (int i = 0; i < 2; i++)
-				{
-					Vector2 offset = Main.rand.NextVector2Circular(4f, 4f);
-					Dust d = Dust.NewDustDirect(
-						tip + offset, 2, 2, tipDust,
-						backVel.X * 0.4f + Main.rand.NextFloat(-0.5f, 0.5f),
-						backVel.Y * 0.4f + Main.rand.NextFloat(-0.5f, 0.5f),
-						150, default, Main.rand.NextFloat(1.5f, 2.2f)
-					);
-					d.noGravity = true;
-					d.velocity += player.velocity * 0.05f;
-				}
+				_tipOldPos[i] = _tipOldPos[i - 1];
+				_tipOldRot[i] = _tipOldRot[i - 1];
 			}
 
-			// ══════════════════════════════════════════════════════
-			// PUNTA: Chispas brillantes más pequeñas
-			// ══════════════════════════════════════════════════════
-			if (Main.rand.NextBool(2))
-			{
-				int sparkDust = _isRedVariant ? DustID.RedTorch : DustID.ShadowbeamStaff;
-				Vector2 offset = Main.rand.NextVector2Circular(6f, 6f);
-				Dust d = Dust.NewDustDirect(
-					tip + offset, 2, 2, sparkDust,
-					Main.rand.NextFloat(-1.5f, 1.5f),
-					Main.rand.NextFloat(-1.5f, 1.5f),
-					0, default, Main.rand.NextFloat(0.8f, 1.4f)
-				);
-				d.noGravity = true;
-			}
+			// Posición más nueva en el índice 0
+			_tipOldPos[0] = BladeTip;
+			_tipOldRot[0] = Projectile.rotation;
 
-			// ══════════════════════════════════════════════════════
-			// CUERPO: Humo denso detrás de la espada (estilo Galaxia)
-			// Spawn a lo largo del cuerpo de la espada, no solo punta
-			// ══════════════════════════════════════════════════════
-			if (progress < 1.5f) // Solo durante órbita activa + un poco después
-			{
-				// Humo principal - DustID.Smoke con tinte de color
-				for (int i = 0; i < 2; i++)
-				{
-					float along = Main.rand.NextFloat(-0.3f, 0.9f); // posición a lo largo de la espada
-					Vector2 pos = Projectile.Center + bladeDir * (along * 35f * Projectile.scale);
-					Vector2 spread = Main.rand.NextVector2Circular(8f, 8f);
-
-					Dust smoke = Dust.NewDustDirect(
-						pos + spread, 4, 4, DustID.Smoke,
-						backVel.X * 0.2f + Main.rand.NextFloat(-0.4f, 0.4f),
-						backVel.Y * 0.2f + Main.rand.NextFloat(-0.4f, 0.4f),
-						160,
-						_isRedVariant ? new Color(140, 15, 15) : new Color(45, 5, 55),
-						Main.rand.NextFloat(1.3f, 2.2f)
-					);
-					smoke.noGravity = true;
-					smoke.velocity *= 0.5f;
-					smoke.velocity += player.velocity * 0.05f;
-					smoke.fadeIn = Main.rand.NextFloat(1.0f, 1.6f);
-				}
-
-				// Humo brillante adicional (más luminoso) con menor frecuencia
-				if (Main.rand.NextBool(3))
-				{
-					int glowSmoke = _isRedVariant ? DustID.Torch : DustID.PurpleTorch;
-					float along = Main.rand.NextFloat(0f, 0.7f);
-					Vector2 pos = Projectile.Center + bladeDir * (along * 30f * Projectile.scale);
-					Vector2 spread = Main.rand.NextVector2Circular(10f, 10f);
-
-					Dust d = Dust.NewDustDirect(
-						pos + spread, 4, 4, glowSmoke,
-						Main.rand.NextFloat(-0.6f, 0.6f),
-						Main.rand.NextFloat(-0.6f, 0.6f),
-						100, default, Main.rand.NextFloat(1.0f, 1.8f)
-					);
-					d.noGravity = true;
-					d.velocity *= 0.3f;
-				}
-			}
-
-			// ══════════════════════════════════════════════════════
-			// DESTELLOS: Gemas/cristales alrededor de la espada
-			// Solo durante la órbita activa (progress < 1.0)
-			// ══════════════════════════════════════════════════════
-			if (progress < 1.0f && Main.rand.NextBool(3))
-			{
-				float dist = Projectile.scale * 40f;
-				Vector2 pos = Projectile.Center + Main.rand.NextVector2Circular(dist, dist);
-				int gemDust = _isRedVariant ? DustID.GemRuby : DustID.GemAmethyst;
-
-				Dust d = Dust.NewDustDirect(
-					pos, 2, 2, gemDust,
-					0f, 0f, 0, default, Main.rand.NextFloat(0.5f, 1.1f)
-				);
-				d.noGravity = true;
-				d.velocity = Main.rand.NextVector2Circular(0.5f, 0.5f);
-				d.fadeIn = 0.6f;
-			}
-
-			// ══════════════════════════════════════════════════════
-			// SHADOWFLAME: Efecto de llama oscura en el filo
-			// ══════════════════════════════════════════════════════
-			if (Main.rand.NextBool(2))
-			{
-				float along = Main.rand.NextFloat(0.3f, 1.0f);
-				Vector2 pos = Projectile.Center + bladeDir * (along * 40f * Projectile.scale);
-
-				Dust d = Dust.NewDustDirect(
-					pos, 4, 4, DustID.Shadowflame,
-					backVel.X * 0.3f,
-					backVel.Y * 0.3f,
-					100, default, Main.rand.NextFloat(1.0f, 1.6f)
-				);
-				d.noGravity = true;
-				d.velocity *= 0.4f;
-			}
+			if (_tipTrailIndex < TIP_TRAIL_LENGTH)
+				_tipTrailIndex++;
 		}
 
-		// RENDERING: Sin SpriteBatch switches - todo con el batch normal de tModLoader
+		// ════════════════════════════════════════════════════════════
+		// RENDERING: VertexStrip trails + sword sprite
+		// ════════════════════════════════════════════════════════════
 		public override bool PreDraw(ref Color lightColor)
 		{
+			// Cargar textura del proyectil
 			Main.instance.LoadProjectile(Projectile.type);
 			Texture2D texture = TextureAssets.Projectile[Projectile.type].Value;
 
+			// ══════════════════════════════════════════════════════
+			// PASO 1: Dibujar VertexStrip trails (requiere SpriteBatch switch)
+			// ══════════════════════════════════════════════════════
+			DrawVertexTrails();
+
+			// ══════════════════════════════════════════════════════
+			// PASO 2: Dibujar la espada principal (ya en SpriteBatch normal)
+			// ══════════════════════════════════════════════════════
 			Vector2 drawOrigin = texture.Size() * 0.5f;
 			Vector2 drawPosition = Projectile.Center - Main.screenPosition;
-
 			Color drawColor = new Color(255, 255, 255, (int)(255f * Projectile.Opacity));
 
-			// ══════════════════════════════════════════════════════
-			// TRAIL: Espadas fantasma con tinte de color fuerte
-			// ══════════════════════════════════════════════════════
-			for (int i = 0; i < Projectile.oldPos.Length; i++)
-			{
-				if (Projectile.oldPos[i] == Vector2.Zero)
-					continue;
-
-				float trailAlpha = (Projectile.oldPos.Length - i) / (float)Projectile.oldPos.Length;
-
-				// Tinte fuerte rojo o púrpura
-				Color tint = _isRedVariant
-					? Color.Lerp(drawColor, new Color(255, 50, 50, 220), 0.5f)
-					: Color.Lerp(drawColor, new Color(130, 30, 180, 220), 0.5f);
-
-				Color trailColor = tint * trailAlpha * 0.5f;
-
-				Vector2 trailDrawPos = Projectile.oldPos[i] + Projectile.Size * 0.5f - Main.screenPosition;
-
-				Main.EntitySpriteDraw(
-					texture,
-					trailDrawPos,
-					null,
-					trailColor,
-					Projectile.oldRot[i],
-					drawOrigin,
-					Projectile.scale * (0.65f + trailAlpha * 0.35f),
-					SpriteEffects.None,
-					0
-				);
-			}
-
-			// ══════════════════════════════════════════════════════
-			// ESPADA PRINCIPAL
-			// ══════════════════════════════════════════════════════
 			Main.EntitySpriteDraw(
 				texture,
 				drawPosition,
@@ -339,6 +215,209 @@ namespace Ame.Projectiles.Modes
 			);
 
 			return false;
+		}
+
+		/// <summary>
+		/// Dibuja ambos trails con VertexStrip:
+		/// 1) Ribbon fino en la punta (como vanilla Zenith)
+		/// 2) Nube de humo ancha detrás de la espada (estilo Galaxia)
+		/// </summary>
+		private void DrawVertexTrails()
+		{
+			// Necesitamos al menos unas posiciones para dibujar
+			int validTipCount = Math.Min(_tipTrailIndex, TIP_TRAIL_LENGTH);
+			int validCenterCount = 0;
+			for (int i = 0; i < Projectile.oldPos.Length; i++)
+			{
+				if (Projectile.oldPos[i] != Vector2.Zero)
+					validCenterCount++;
+				else
+					break;
+			}
+
+			if (validTipCount < 3 && validCenterCount < 3)
+				return;
+
+			// ── Parar SpriteBatch actual y reiniciar con Immediate para shaders ──
+			try
+			{
+				Main.spriteBatch.End();
+			}
+			catch { }
+
+			Main.spriteBatch.Begin(
+				SpriteSortMode.Immediate,
+				BlendState.AlphaBlend,
+				SamplerState.PointWrap,
+				DepthStencilState.None,
+				Main.Rasterizer,
+				null,
+				Main.GameViewMatrix.TransformationMatrix
+			);
+
+			// ══════════════════════════════════════════════════════
+			// TRAIL 1: NUBE DE HUMO (detrás de la espada, ancha, difusa)
+			// Usa Projectile.oldPos (posiciones del centro de la espada)
+			// ══════════════════════════════════════════════════════
+			if (validCenterCount >= 3)
+			{
+				MiscShaderData smokeShader = GameShaders.Misc["FinalFractal"];
+				smokeShader.UseImage0(TextureAssets.Extra[ExtrasID.FinalFractal]);
+
+				_smokeStrip.PrepareStrip(
+					Projectile.oldPos,
+					Projectile.oldRot,
+					SmokeColorFunction,
+					SmokeWidthFunction,
+					-Main.screenPosition + Projectile.Size / 2f
+				);
+
+				smokeShader.Apply();
+				_smokeStrip.DrawTrail();
+			}
+
+			// ══════════════════════════════════════════════════════
+			// TRAIL 2: RIBBON EN LA PUNTA (fino, brillante, continuo)
+			// Usa _tipOldPos (posiciones de la punta de la espada)
+			// ══════════════════════════════════════════════════════
+			if (validTipCount >= 3)
+			{
+				// Construir arrays limpios (solo posiciones válidas)
+				Vector2[] tipPositions = new Vector2[validTipCount];
+				float[] tipRotations = new float[validTipCount];
+				Array.Copy(_tipOldPos, tipPositions, validTipCount);
+				Array.Copy(_tipOldRot, tipRotations, validTipCount);
+
+				MiscShaderData tipShader = GameShaders.Misc["FinalFractal"];
+				tipShader.UseImage0(TextureAssets.Extra[ExtrasID.FinalFractal]);
+
+				_tipStrip.PrepareStrip(
+					tipPositions,
+					tipRotations,
+					TipColorFunction,
+					TipWidthFunction,
+					-Main.screenPosition
+				);
+
+				tipShader.Apply();
+				_tipStrip.DrawTrail();
+			}
+
+			// ── Restaurar SpriteBatch normal ──
+			try
+			{
+				Main.spriteBatch.End();
+			}
+			catch { }
+
+			Main.spriteBatch.Begin(
+				SpriteSortMode.Deferred,
+				BlendState.AlphaBlend,
+				Main.DefaultSamplerState,
+				DepthStencilState.None,
+				Main.Rasterizer,
+				null,
+				Main.GameViewMatrix.TransformationMatrix
+			);
+		}
+
+		// ════════════════════════════════════════════════════════════
+		// COLOR/WIDTH CALLBACKS para el ribbon de la PUNTA
+		// progress: 0.0 = cabeza (más nuevo), 1.0 = cola (más viejo)
+		// ════════════════════════════════════════════════════════════
+
+		private Color TipColorFunction(float progress)
+		{
+			// Fade fuerte de cabeza a cola
+			float fade = (1f - progress);
+			fade = fade * fade; // Cuadrático para que se desvanezca más rápido
+
+			Color baseColor;
+			if (_isRedVariant)
+			{
+				// Rojo brillante → rojo oscuro
+				baseColor = Color.Lerp(
+					new Color(255, 60, 30),  // Rojo brillante/naranja en la cabeza
+					new Color(180, 10, 0),   // Rojo oscuro en la cola
+					progress
+				);
+			}
+			else
+			{
+				// Negro/púrpura oscuro → negro puro
+				baseColor = Color.Lerp(
+					new Color(120, 20, 160), // Púrpura oscuro en la cabeza
+					new Color(30, 0, 40),    // Casi negro en la cola
+					progress
+				);
+			}
+
+			baseColor.A = 0; // Alpha 0 = apariencia aditiva/luminosa
+			baseColor *= fade * Projectile.Opacity;
+			return baseColor;
+		}
+
+		private float TipWidthFunction(float progress)
+		{
+			// Forma de cinta: más ancho en el inicio, se estrecha hacia la cola
+			float taper = (1f - progress);
+			float width = MathHelper.Lerp(18f, 3f, progress) * taper;
+
+			// Un poquito más ancho cerca del inicio para dar sensación de "cinta"
+			if (progress < 0.15f)
+				width *= MathHelper.Lerp(0.6f, 1f, progress / 0.15f);
+
+			return width * Projectile.scale * Projectile.Opacity;
+		}
+
+		// ════════════════════════════════════════════════════════════
+		// COLOR/WIDTH CALLBACKS para la NUBE DE HUMO
+		// ════════════════════════════════════════════════════════════
+
+		private Color SmokeColorFunction(float progress)
+		{
+			float fade = (1f - progress);
+			fade = (float)Math.Pow(fade, 1.5); // Más gradual que el ribbon
+
+			Color baseColor;
+			if (_isRedVariant)
+			{
+				// Humo rojo oscuro denso
+				baseColor = Color.Lerp(
+					new Color(160, 25, 10),  // Rojo oscuro caliente
+					new Color(60, 5, 5),     // Rojo muy oscuro / marrón
+					progress
+				);
+			}
+			else
+			{
+				// Humo negro/púrpura denso
+				baseColor = Color.Lerp(
+					new Color(80, 10, 100),  // Púrpura oscuro
+					new Color(15, 0, 20),    // Casi negro
+					progress
+				);
+			}
+
+			baseColor.A = (byte)(80 * fade); // Semi-transparente para efecto de humo
+			baseColor *= fade * 0.55f * Projectile.Opacity; // Más sutil que el ribbon
+			return baseColor;
+		}
+
+		private float SmokeWidthFunction(float progress)
+		{
+			// Nube ancha: empieza mediana, se ensancha en el medio, se desvanece
+			// Forma tipo "nube" / "humo difuso"
+			float cloudShape = (float)Math.Sin(progress * Math.PI); // Máximo en el medio
+			float taper = (1f - progress * 0.7f); // No se reduce tanto como el ribbon
+
+			float width = MathHelper.Lerp(25f, 40f, cloudShape) * taper;
+
+			// Fade in al principio
+			if (progress < 0.1f)
+				width *= progress / 0.1f;
+
+			return width * Projectile.scale * Projectile.Opacity;
 		}
 
 		public override bool? Colliding(Rectangle projHitbox, Rectangle targetHitbox)
@@ -369,7 +448,7 @@ namespace Ame.Projectiles.Modes
 		public override void OnHitNPC(NPC target, NPC.HitInfo hit, int damageDone)
 		{
 			// Explosión de chispas al impactar
-			for (int i = 0; i < 15; i++)
+			for (int i = 0; i < 12; i++)
 			{
 				int dustType = _isRedVariant ? DustID.Torch : DustID.PurpleTorch;
 				Dust d = Dust.NewDustDirect(
@@ -379,19 +458,6 @@ namespace Ame.Projectiles.Modes
 				);
 				d.noGravity = true;
 				d.velocity = (d.position - target.Center).SafeNormalize(Vector2.UnitY) * Main.rand.NextFloat(3f, 8f);
-			}
-
-			// Humo de impacto
-			for (int i = 0; i < 8; i++)
-			{
-				Dust smoke = Dust.NewDustDirect(
-					target.Center - new Vector2(20f), 40, 40,
-					DustID.Smoke, 0f, 0f, 180,
-					_isRedVariant ? new Color(150, 20, 20) : new Color(50, 5, 60),
-					Main.rand.NextFloat(1.8f, 3.0f)
-				);
-				smoke.noGravity = true;
-				smoke.velocity = Main.rand.NextVector2Circular(4f, 4f);
 			}
 
 			// Shadowflame en impacto
@@ -404,19 +470,6 @@ namespace Ame.Projectiles.Modes
 				);
 				sf.noGravity = true;
 				sf.velocity = Main.rand.NextVector2Circular(5f, 5f);
-			}
-
-			// Gemas
-			for (int i = 0; i < 5; i++)
-			{
-				int gem = _isRedVariant ? DustID.GemRuby : DustID.GemAmethyst;
-				Dust g = Dust.NewDustDirect(
-					target.Center - new Vector2(8f), 16, 16,
-					gem, 0f, 0f, 0, default,
-					Main.rand.NextFloat(0.8f, 1.6f)
-				);
-				g.noGravity = true;
-				g.velocity = Main.rand.NextVector2Circular(6f, 6f);
 			}
 		}
 
