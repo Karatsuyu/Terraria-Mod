@@ -25,18 +25,22 @@ namespace Ame.Projectiles.Modes
 
 		// VertexStrip para trail de punta (ribbon fino y brillante)
 		private VertexStrip _tipStrip = new VertexStrip();
-		// VertexStrip para humo/nube detrás de la espada (ancho y difuso)
-		private VertexStrip _smokeStrip = new VertexStrip();
 
 		// Posiciones de la punta guardadas manualmente (Projectile.oldPos guarda el centro)
-		private const int TIP_TRAIL_LENGTH = 24;
+		private const int TIP_TRAIL_LENGTH = 32;
 		private Vector2[] _tipOldPos = new Vector2[TIP_TRAIL_LENGTH];
 		private float[] _tipOldRot = new float[TIP_TRAIL_LENGTH];
 		private int _tipTrailIndex = 0;
 
+		// ═══ CORTINA CÓSMICA: buffer de posiciones del centro para primitive trail ═══
+		private const int ENERGY_TRAIL_LENGTH = 30;
+		private Vector2[] _energyTrailPos = new Vector2[ENERGY_TRAIL_LENGTH];
+		private int _energyTrailCount = 0;
+		private float _noiseOffset = 0f; // Anima la distorsión del humo
+
 		public override void SetStaticDefaults()
 		{
-			ProjectileID.Sets.TrailCacheLength[Projectile.type] = 20;
+			ProjectileID.Sets.TrailCacheLength[Projectile.type] = 30;
 			ProjectileID.Sets.TrailingMode[Projectile.type] = 2;
 		}
 
@@ -146,6 +150,7 @@ namespace Ame.Projectiles.Modes
 			// REGISTRAR POSICIÓN DE LA PUNTA para el ribbon trail
 			// ====================================================================
 			RecordTipPosition();
+			RecordEnergyTrailPosition();
 
 			// Iluminación
 			if (_isRedVariant)
@@ -186,17 +191,22 @@ namespace Ame.Projectiles.Modes
 		// ════════════════════════════════════════════════════════════
 		public override bool PreDraw(ref Color lightColor)
 		{
-			// Cargar textura del proyectil
 			Main.instance.LoadProjectile(Projectile.type);
 			Texture2D texture = TextureAssets.Projectile[Projectile.type].Value;
 
 			// ══════════════════════════════════════════════════════
-			// PASO 1: Dibujar VertexStrip trails (requiere SpriteBatch switch)
+			// CAPA 1: CORTINA CÓSMICA — primitive ribbon trail (EntitySpriteDraw)
+			// Se dibuja PRIMERO, debajo de todo, SIN SpriteBatch switch
 			// ══════════════════════════════════════════════════════
-			DrawVertexTrails();
+			DrawEnergyTrail();
 
 			// ══════════════════════════════════════════════════════
-			// PASO 2: Dibujar la espada principal (ya en SpriteBatch normal)
+			// CAPA 2: RIBBON PUNTA — VertexStrip (requiere SpriteBatch switch)
+			// ══════════════════════════════════════════════════════
+			DrawTipVertexStrip();
+
+			// ══════════════════════════════════════════════════════
+			// CAPA 3: ESPADA PRINCIPAL
 			// ══════════════════════════════════════════════════════
 			Vector2 drawOrigin = texture.Size() * 0.5f;
 			Vector2 drawPosition = Projectile.Center - Main.screenPosition;
@@ -217,33 +227,236 @@ namespace Ame.Projectiles.Modes
 			return false;
 		}
 
-		/// <summary>
-		/// Dibuja ambos trails con VertexStrip:
-		/// 1) Ribbon fino en la punta (como vanilla Zenith)
-		/// 2) Nube de humo ancha detrás de la espada (estilo Galaxia)
-		/// </summary>
-		private void DrawVertexTrails()
-		{
-			// Necesitamos al menos unas posiciones para dibujar
-			int validTipCount = Math.Min(_tipTrailIndex, TIP_TRAIL_LENGTH);
-			int validCenterCount = 0;
-			for (int i = 0; i < Projectile.oldPos.Length; i++)
-			{
-				if (Projectile.oldPos[i] != Vector2.Zero)
-					validCenterCount++;
-				else
-					break;
-			}
+		// ════════════════════════════════════════════════════════════
+		// CORTINA CÓSMICA: Primitive ribbon trail (EntitySpriteDraw)
+		// Cinta dinámica continua — NO partículas, NO pixeles
+		// ════════════════════════════════════════════════════════════
 
-			if (validTipCount < 3 && validCenterCount < 3)
+		/// <summary>
+		/// Registra la posición actual del centro para la cortina cósmica.
+		/// </summary>
+		private void RecordEnergyTrailPosition()
+		{
+			for (int i = ENERGY_TRAIL_LENGTH - 1; i > 0; i--)
+				_energyTrailPos[i] = _energyTrailPos[i - 1];
+
+			_energyTrailPos[0] = Projectile.Center;
+
+			if (_energyTrailCount < ENERGY_TRAIL_LENGTH)
+				_energyTrailCount++;
+
+			_noiseOffset += 0.12f; // Anima la distorsión continuamente
+		}
+
+		/// <summary>
+		/// Dibuja la cortina cósmica con distorsión orgánica.
+		/// 3 capas superpuestas con ruido lateral diferente = forma de humo/nebulosa viva.
+		/// Cada segmento se desplaza perpendicular al movimiento con sin() a diferentes
+		/// frecuencias, rompiendo la forma recta y creando bordes irregulares.
+		/// </summary>
+		private void DrawEnergyTrail()
+		{
+			if (_energyTrailCount < 3)
 				return;
 
-			// ── Parar SpriteBatch actual y reiniciar con Immediate para shaders ──
-			try
+			Texture2D pixel = TextureAssets.MagicPixel.Value;
+			int count = _energyTrailCount;
+
+			// ── CAPA 1: Humo exterior difuso — ruido lento y amplio (forma general de nube) ──
+			for (int i = 0; i < count - 1; i++)
 			{
-				Main.spriteBatch.End();
+				Vector2 posA = _energyTrailPos[i];
+				Vector2 posB = _energyTrailPos[i + 1];
+
+				if (posA == Vector2.Zero || posB == Vector2.Zero)
+					continue;
+
+				float progress = (float)i / (float)count;
+				float fade = 1f - progress;
+				fade = (float)Math.Pow(fade, 1.2);
+
+				// Normal perpendicular al movimiento
+				Vector2 dir = (posB - posA).SafeNormalize(Vector2.UnitY);
+				Vector2 normal = new Vector2(-dir.Y, dir.X);
+
+				// Ruido lento: ondulación amplia que mueve toda la nube
+				float noise1 = (float)Math.Sin(progress * 4f + _noiseOffset * 0.7f) * 12f;
+				// Ruido medio: irregularidad en los bordes
+				float noise2 = (float)Math.Sin(progress * 9f + _noiseOffset * 1.3f + 2.1f) * 6f;
+				float totalNoise = (noise1 + noise2) * fade;
+
+				Vector2 offsetA = posA + normal * totalNoise;
+				Vector2 offsetB = posB + normal * totalNoise;
+
+				Color color;
+				if (_isRedVariant)
+				{
+					color = Color.Lerp(
+						new Color(140, 20, 5, 120),
+						new Color(40, 3, 0, 0),
+						progress
+					);
+				}
+				else
+				{
+					color = Color.Lerp(
+						new Color(70, 8, 95, 120),
+						new Color(10, 0, 18, 0),
+						progress
+					);
+				}
+				color *= fade * 0.4f * Projectile.Opacity;
+
+				// Ancho variable con distorsión — se ensancha irregular en el medio
+				float cloudSwell = (float)Math.Sin(progress * Math.PI);
+				float widthNoise = (float)Math.Sin(progress * 7f + _noiseOffset * 0.9f) * 0.3f + 1f;
+				float width = MathHelper.Lerp(30f, 55f, cloudSwell) * (1f - progress * 0.4f) * widthNoise;
+				width *= Projectile.scale;
+
+				DrawRibbonSegment(pixel, offsetA, offsetB, color, width);
 			}
-			catch { }
+
+			// ── CAPA 2: Humo medio — ruido diferente, desplazado al lado opuesto ──
+			for (int i = 0; i < count - 1; i++)
+			{
+				Vector2 posA = _energyTrailPos[i];
+				Vector2 posB = _energyTrailPos[i + 1];
+
+				if (posA == Vector2.Zero || posB == Vector2.Zero)
+					continue;
+
+				float progress = (float)i / (float)count;
+				float fade = 1f - progress;
+				fade = fade * fade;
+
+				Vector2 dir = (posB - posA).SafeNormalize(Vector2.UnitY);
+				Vector2 normal = new Vector2(-dir.Y, dir.X);
+
+				// Ruido OPUESTO a la capa 1 — crea volumen bilateral
+				float noise1 = (float)Math.Sin(progress * 5.5f + _noiseOffset * 0.9f + 3.7f) * -10f;
+				float noise2 = (float)Math.Cos(progress * 11f + _noiseOffset * 1.5f) * 5f;
+				float totalNoise = (noise1 + noise2) * fade;
+
+				Vector2 offsetA = posA + normal * totalNoise;
+				Vector2 offsetB = posB + normal * totalNoise;
+
+				Color color;
+				if (_isRedVariant)
+				{
+					color = Color.Lerp(
+						new Color(200, 35, 12, 150),
+						new Color(70, 5, 0, 0),
+						progress
+					);
+				}
+				else
+				{
+					color = Color.Lerp(
+						new Color(100, 12, 135, 150),
+						new Color(20, 0, 30, 0),
+						progress
+					);
+				}
+				color *= fade * 0.5f * Projectile.Opacity;
+
+				float cloudSwell = (float)Math.Sin(progress * Math.PI + 0.5f);
+				float widthNoise = (float)Math.Sin(progress * 8f + _noiseOffset * 1.1f + 1.5f) * 0.25f + 1f;
+				float width = MathHelper.Lerp(22f, 42f, cloudSwell) * (1f - progress * 0.5f) * widthNoise;
+				width *= Projectile.scale;
+
+				DrawRibbonSegment(pixel, offsetA, offsetB, color, width);
+			}
+
+			// ── CAPA 3: Núcleo brillante — ruido rápido y pequeño (detalle de turbulencia) ──
+			for (int i = 0; i < count - 1; i++)
+			{
+				Vector2 posA = _energyTrailPos[i];
+				Vector2 posB = _energyTrailPos[i + 1];
+
+				if (posA == Vector2.Zero || posB == Vector2.Zero)
+					continue;
+
+				float progress = (float)i / (float)count;
+				float fade = 1f - progress;
+				fade = fade * fade * fade; // Cúbico: más concentrado cerca de la espada
+
+				Vector2 dir = (posB - posA).SafeNormalize(Vector2.UnitY);
+				Vector2 normal = new Vector2(-dir.Y, dir.X);
+
+				// Ruido rápido: turbulencia fina dentro del humo
+				float noise = (float)Math.Sin(progress * 14f + _noiseOffset * 2f) * 4f * fade;
+
+				Vector2 offsetA = posA + normal * noise;
+				Vector2 offsetB = posB + normal * noise;
+
+				Color color;
+				if (_isRedVariant)
+				{
+					color = Color.Lerp(
+						new Color(255, 70, 25, 180),
+						new Color(140, 10, 0, 0),
+						progress
+					);
+				}
+				else
+				{
+					color = Color.Lerp(
+						new Color(140, 25, 180, 180),
+						new Color(35, 0, 50, 0),
+						progress
+					);
+				}
+				color *= fade * 0.75f * Projectile.Opacity;
+
+				// Núcleo estrecho pero intenso
+				float width = MathHelper.Lerp(12f, 4f, progress) * Projectile.scale;
+
+				DrawRibbonSegment(pixel, offsetA, offsetB, color, width);
+			}
+		}
+
+		/// <summary>
+		/// Dibuja un segmento de cinta entre dos puntos del mundo.
+		/// MagicPixel (1x1 blanco) estirado como rectángulo rotado.
+		/// </summary>
+		private void DrawRibbonSegment(Texture2D pixel, Vector2 worldA, Vector2 worldB, Color color, float width)
+		{
+			Vector2 screenA = worldA - Main.screenPosition;
+			Vector2 screenB = worldB - Main.screenPosition;
+			Vector2 diff = screenB - screenA;
+			float length = diff.Length();
+
+			if (length < 1f)
+				return;
+
+			Main.EntitySpriteDraw(
+				pixel,
+				screenA,
+				new Rectangle(0, 0, 1, 1),
+				color,
+				diff.ToRotation(),
+				new Vector2(0f, 0.5f),
+				new Vector2(length, width),
+				SpriteEffects.None,
+				0
+			);
+		}
+
+		// ════════════════════════════════════════════════════════════
+		// RIBBON DE PUNTA: VertexStrip con shader FinalFractal
+		// ════════════════════════════════════════════════════════════
+
+		/// <summary>
+		/// Dibuja el ribbon fino en la punta con VertexStrip + FinalFractal shader.
+		/// </summary>
+		private void DrawTipVertexStrip()
+		{
+			int validTipCount = Math.Min(_tipTrailIndex, TIP_TRAIL_LENGTH);
+			if (validTipCount < 3)
+				return;
+
+			// ── SpriteBatch switch a Immediate para shader ──
+			try { Main.spriteBatch.End(); } catch { }
 
 			Main.spriteBatch.Begin(
 				SpriteSortMode.Immediate,
@@ -255,60 +468,27 @@ namespace Ame.Projectiles.Modes
 				Main.GameViewMatrix.TransformationMatrix
 			);
 
-			// ══════════════════════════════════════════════════════
-			// TRAIL 1: NUBE DE HUMO (detrás de la espada, ancha, difusa)
-			// Usa Projectile.oldPos (posiciones del centro de la espada)
-			// ══════════════════════════════════════════════════════
-			if (validCenterCount >= 3)
-			{
-				MiscShaderData smokeShader = GameShaders.Misc["FinalFractal"];
-				smokeShader.UseImage0(TextureAssets.Extra[ExtrasID.FinalFractal]);
+			Vector2[] tipPositions = new Vector2[validTipCount];
+			float[] tipRotations = new float[validTipCount];
+			Array.Copy(_tipOldPos, tipPositions, validTipCount);
+			Array.Copy(_tipOldRot, tipRotations, validTipCount);
 
-				_smokeStrip.PrepareStrip(
-					Projectile.oldPos,
-					Projectile.oldRot,
-					SmokeColorFunction,
-					SmokeWidthFunction,
-					-Main.screenPosition + Projectile.Size / 2f
-				);
+			MiscShaderData tipShader = GameShaders.Misc["FinalFractal"];
+			tipShader.UseImage0(TextureAssets.Extra[ExtrasID.FinalFractal]);
 
-				smokeShader.Apply();
-				_smokeStrip.DrawTrail();
-			}
+			_tipStrip.PrepareStrip(
+				tipPositions,
+				tipRotations,
+				TipColorFunction,
+				TipWidthFunction,
+				-Main.screenPosition
+			);
 
-			// ══════════════════════════════════════════════════════
-			// TRAIL 2: RIBBON EN LA PUNTA (fino, brillante, continuo)
-			// Usa _tipOldPos (posiciones de la punta de la espada)
-			// ══════════════════════════════════════════════════════
-			if (validTipCount >= 3)
-			{
-				// Construir arrays limpios (solo posiciones válidas)
-				Vector2[] tipPositions = new Vector2[validTipCount];
-				float[] tipRotations = new float[validTipCount];
-				Array.Copy(_tipOldPos, tipPositions, validTipCount);
-				Array.Copy(_tipOldRot, tipRotations, validTipCount);
-
-				MiscShaderData tipShader = GameShaders.Misc["FinalFractal"];
-				tipShader.UseImage0(TextureAssets.Extra[ExtrasID.FinalFractal]);
-
-				_tipStrip.PrepareStrip(
-					tipPositions,
-					tipRotations,
-					TipColorFunction,
-					TipWidthFunction,
-					-Main.screenPosition
-				);
-
-				tipShader.Apply();
-				_tipStrip.DrawTrail();
-			}
+			tipShader.Apply();
+			_tipStrip.DrawTrail();
 
 			// ── Restaurar SpriteBatch normal ──
-			try
-			{
-				Main.spriteBatch.End();
-			}
-			catch { }
+			try { Main.spriteBatch.End(); } catch { }
 
 			Main.spriteBatch.Begin(
 				SpriteSortMode.Deferred,
@@ -328,94 +508,39 @@ namespace Ame.Projectiles.Modes
 
 		private Color TipColorFunction(float progress)
 		{
-			// Fade fuerte de cabeza a cola
 			float fade = (1f - progress);
-			fade = fade * fade; // Cuadrático para que se desvanezca más rápido
+			fade = fade * fade;
 
 			Color baseColor;
 			if (_isRedVariant)
 			{
-				// Rojo brillante → rojo oscuro
 				baseColor = Color.Lerp(
-					new Color(255, 60, 30),  // Rojo brillante/naranja en la cabeza
-					new Color(180, 10, 0),   // Rojo oscuro en la cola
+					new Color(255, 60, 30),
+					new Color(180, 10, 0),
 					progress
 				);
 			}
 			else
 			{
-				// Negro/púrpura oscuro → negro puro
 				baseColor = Color.Lerp(
-					new Color(120, 20, 160), // Púrpura oscuro en la cabeza
-					new Color(30, 0, 40),    // Casi negro en la cola
+					new Color(120, 20, 160),
+					new Color(30, 0, 40),
 					progress
 				);
 			}
 
-			baseColor.A = 0; // Alpha 0 = apariencia aditiva/luminosa
+			baseColor.A = 0;
 			baseColor *= fade * Projectile.Opacity;
 			return baseColor;
 		}
 
 		private float TipWidthFunction(float progress)
 		{
-			// Forma de cinta: más ancho en el inicio, se estrecha hacia la cola
 			float taper = (1f - progress);
 			float width = MathHelper.Lerp(18f, 3f, progress) * taper;
 
-			// Un poquito más ancho cerca del inicio para dar sensación de "cinta"
 			if (progress < 0.15f)
 				width *= MathHelper.Lerp(0.6f, 1f, progress / 0.15f);
-
-			return width * Projectile.scale * Projectile.Opacity;
-		}
-
-		// ════════════════════════════════════════════════════════════
-		// COLOR/WIDTH CALLBACKS para la NUBE DE HUMO
-		// ════════════════════════════════════════════════════════════
-
-		private Color SmokeColorFunction(float progress)
-		{
-			float fade = (1f - progress);
-			fade = (float)Math.Pow(fade, 1.5); // Más gradual que el ribbon
-
-			Color baseColor;
-			if (_isRedVariant)
-			{
-				// Humo rojo oscuro denso
-				baseColor = Color.Lerp(
-					new Color(160, 25, 10),  // Rojo oscuro caliente
-					new Color(60, 5, 5),     // Rojo muy oscuro / marrón
-					progress
-				);
-			}
-			else
-			{
-				// Humo negro/púrpura denso
-				baseColor = Color.Lerp(
-					new Color(80, 10, 100),  // Púrpura oscuro
-					new Color(15, 0, 20),    // Casi negro
-					progress
-				);
-			}
-
-			baseColor.A = (byte)(80 * fade); // Semi-transparente para efecto de humo
-			baseColor *= fade * 0.55f * Projectile.Opacity; // Más sutil que el ribbon
-			return baseColor;
-		}
-
-		private float SmokeWidthFunction(float progress)
-		{
-			// Nube ancha: empieza mediana, se ensancha en el medio, se desvanece
-			// Forma tipo "nube" / "humo difuso"
-			float cloudShape = (float)Math.Sin(progress * Math.PI); // Máximo en el medio
-			float taper = (1f - progress * 0.7f); // No se reduce tanto como el ribbon
-
-			float width = MathHelper.Lerp(25f, 40f, cloudShape) * taper;
-
-			// Fade in al principio
-			if (progress < 0.1f)
-				width *= progress / 0.1f;
 
 			return width * Projectile.scale * Projectile.Opacity;
 		}
