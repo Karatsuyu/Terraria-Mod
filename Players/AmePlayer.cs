@@ -41,14 +41,7 @@ namespace Ame.Players
 
 		public override void PostUpdate()
 		{
-			// Efectos visuales cuando tiene el arma equipada
-			if (hasAmeWeapon && Main.rand.NextBool(10))
-			{
-				Dust dust = Dust.NewDustDirect(Player.position, Player.width, Player.height, 
-					Terraria.ID.DustID.RainbowMk2, 0f, 0f, 100, default, 0.8f);
-				dust.noGravity = true;
-				dust.velocity *= 0.3f;
-			}
+			// (Sin partículas decorativas del jugador)
 		}
 	}
 }

@@ -42,6 +42,14 @@ namespace Ame.Projectiles.Modes
 		private static Texture2D _softGlow;
 		private static bool _glowCreated = false;
 
+		// ═══ SONIDOS CUSTOM: 4 variantes random al lanzar espada ═══
+		private static readonly SoundStyle _bladeSwingSound = new SoundStyle("Ame/Assets/Sounds/BladeSwing3")
+		{
+			Volume = 0.5f,
+			PitchVariance = 0.35f,
+			MaxInstances = 0,      // Sin límite — suena en cada espada
+		};
+
 		public override void SetStaticDefaults()
 		{
 			ProjectileID.Sets.TrailCacheLength[Projectile.type] = 30;
@@ -61,6 +69,7 @@ namespace Ame.Projectiles.Modes
 			Projectile.usesLocalNPCImmunity = true;
 			Projectile.localNPCHitCooldown = 10;
 			Projectile.timeLeft = 300;
+			Projectile.noEnchantmentVisuals = true; // Sin partículas vanilla de enchantments
 		}
 
 		// CRITICAL: Desactivar position += velocity automático
@@ -76,7 +85,7 @@ namespace Ame.Projectiles.Modes
 			if (Projectile.localAI[1] == 0f)
 			{
 				Projectile.localAI[1] = 1f;
-				SoundEngine.PlaySound(SoundID.Item1, Projectile.Center);
+				SoundEngine.PlaySound(_bladeSwingSound, Projectile.Center);
 			}
 
 			if (!_colorInitialized)
@@ -551,17 +560,19 @@ namespace Ame.Projectiles.Modes
 			Color baseColor;
 			if (_isRedVariant)
 			{
+				// Rojo brillante → rojo profundo
 				baseColor = Color.Lerp(
-					new Color(255, 120, 40),
-					new Color(255, 40, 5),
+					new Color(255, 30, 10),
+					new Color(200, 10, 0),
 					progress
 				);
 			}
 			else
 			{
+				// Negro con tinte rojo mínimo → negro puro
 				baseColor = Color.Lerp(
-					new Color(200, 60, 30),
-					new Color(80, 10, 5),
+					new Color(40, 4, 2),
+					new Color(10, 1, 0),
 					progress
 				);
 			}
@@ -610,30 +621,7 @@ namespace Ame.Projectiles.Modes
 
 		public override void OnHitNPC(NPC target, NPC.HitInfo hit, int damageDone)
 		{
-			// Explosión de chispas al impactar
-			for (int i = 0; i < 12; i++)
-			{
-				int dustType = _isRedVariant ? DustID.Torch : DustID.PurpleTorch;
-				Dust d = Dust.NewDustDirect(
-					target.Center - new Vector2(16f), 32, 32,
-					dustType, 0f, 0f, 100, default,
-					Main.rand.NextFloat(1.5f, 2.8f)
-				);
-				d.noGravity = true;
-				d.velocity = (d.position - target.Center).SafeNormalize(Vector2.UnitY) * Main.rand.NextFloat(3f, 8f);
-			}
-
-			// Shadowflame en impacto
-			for (int i = 0; i < 6; i++)
-			{
-				Dust sf = Dust.NewDustDirect(
-					target.Center - new Vector2(12f), 24, 24,
-					DustID.Shadowflame, 0f, 0f, 0, default,
-					Main.rand.NextFloat(1.5f, 2.5f)
-				);
-				sf.noGravity = true;
-				sf.velocity = Main.rand.NextVector2Circular(5f, 5f);
-			}
+			// Sin partículas de impacto — solo la nebulosa y el ribbon de punta
 		}
 
 		public override Color? GetAlpha(Color lightColor)
