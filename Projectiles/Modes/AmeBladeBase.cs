@@ -14,7 +14,7 @@ namespace Ame.Projectiles.Modes
 	/// <summary>
 	/// CLASE BASE para las 19 espadas del Melee2
 	/// Orbit = 100% vanilla Zenith (AI_182_FinalFractal)
-	/// Visual FX = VertexStrip ribbon trail (punta) + VertexStrip smoke cloud (cuerpo)
+	/// Visual FX = VertexStrip ribbon trail (punta) + Nebula cloud puffs (cuerpo)
 	/// Colores: rojo o negro aleatorio por espada
 	/// </summary>
 	public abstract class AmeBladeBase : ModProjectile
@@ -32,11 +32,15 @@ namespace Ame.Projectiles.Modes
 		private float[] _tipOldRot = new float[TIP_TRAIL_LENGTH];
 		private int _tipTrailIndex = 0;
 
-		// ═══ CORTINA CÓSMICA: buffer de posiciones del centro para primitive trail ═══
+		// ═══ NEBULA CLOUD: buffer de posiciones del centro para trail de humo ═══
 		private const int ENERGY_TRAIL_LENGTH = 30;
 		private Vector2[] _energyTrailPos = new Vector2[ENERGY_TRAIL_LENGTH];
 		private int _energyTrailCount = 0;
 		private float _noiseOffset = 0f; // Anima la distorsión del humo
+
+		// ═══ TEXTURA SOFT GLOW: generada 1 vez, compartida por todas las espadas ═══
+		private static Texture2D _softGlow;
+		private static bool _glowCreated = false;
 
 		public override void SetStaticDefaults()
 		{
@@ -156,13 +160,13 @@ namespace Ame.Projectiles.Modes
 			if (_isRedVariant)
 				Lighting.AddLight(Projectile.Center, 0.9f, 0.2f, 0.1f);
 			else
-				Lighting.AddLight(Projectile.Center, 0.35f, 0.05f, 0.5f);
+				Lighting.AddLight(Projectile.Center, 0.25f, 0.04f, 0.02f);
 
 			Vector2 tip = BladeTip;
 			if (_isRedVariant)
 				Lighting.AddLight(tip, 1.0f, 0.3f, 0.1f);
 			else
-				Lighting.AddLight(tip, 0.4f, 0.1f, 0.6f);
+				Lighting.AddLight(tip, 0.3f, 0.05f, 0.02f);
 		}
 
 		/// <summary>
@@ -187,18 +191,55 @@ namespace Ame.Projectiles.Modes
 		}
 
 		// ════════════════════════════════════════════════════════════
-		// RENDERING: VertexStrip trails + sword sprite
+		// RENDERING: Nebula cloud + VertexStrip tip ribbon + sword sprite
 		// ════════════════════════════════════════════════════════════
+
+		/// <summary>
+		/// Crea la textura de soft glow (círculo radial suave) una sola vez.
+		/// Se comparte entre todas las instancias de espada.
+		/// </summary>
+		private static void EnsureGlowTexture()
+		{
+			if (_glowCreated && _softGlow != null && !_softGlow.IsDisposed)
+				return;
+
+			const int SIZE = 64;
+			_softGlow = new Texture2D(Main.graphics.GraphicsDevice, SIZE, SIZE);
+			Color[] data = new Color[SIZE * SIZE];
+			float center = SIZE / 2f;
+
+			for (int y = 0; y < SIZE; y++)
+			{
+				for (int x = 0; x < SIZE; x++)
+				{
+					float dx = x - center;
+					float dy = y - center;
+					float dist = MathF.Sqrt(dx * dx + dy * dy) / center;
+					float alpha = MathHelper.Clamp(1f - dist, 0f, 1f);
+					// Cubic falloff para bordes ultra-suaves (parece humo)
+					alpha = alpha * alpha * alpha;
+					// Premultiplied alpha para AlphaBlend correcto
+					byte a = (byte)(alpha * 255f);
+					data[y * SIZE + x] = new Color(a, a, a, a);
+				}
+			}
+
+			_softGlow.SetData(data);
+			_glowCreated = true;
+		}
+
 		public override bool PreDraw(ref Color lightColor)
 		{
+			EnsureGlowTexture();
+
 			Main.instance.LoadProjectile(Projectile.type);
 			Texture2D texture = TextureAssets.Projectile[Projectile.type].Value;
 
 			// ══════════════════════════════════════════════════════
-			// CAPA 1: CORTINA CÓSMICA — primitive ribbon trail (EntitySpriteDraw)
+			// CAPA 1: NEBULA CLOUD — puffs suaves de humo (EntitySpriteDraw)
 			// Se dibuja PRIMERO, debajo de todo, SIN SpriteBatch switch
 			// ══════════════════════════════════════════════════════
-			DrawEnergyTrail();
+			DrawNebulaCloud();
 
 			// ══════════════════════════════════════════════════════
 			// CAPA 2: RIBBON PUNTA — VertexStrip (requiere SpriteBatch switch)
@@ -228,12 +269,12 @@ namespace Ame.Projectiles.Modes
 		}
 
 		// ════════════════════════════════════════════════════════════
-		// CORTINA CÓSMICA: Primitive ribbon trail (EntitySpriteDraw)
-		// Cinta dinámica continua — NO partículas, NO pixeles
+		// NEBULA CLOUD: Trail de humo cósmico estilo Galaxia
+		// Círculos suaves superpuestos (puffs) — NO rectángulos
 		// ════════════════════════════════════════════════════════════
 
 		/// <summary>
-		/// Registra la posición actual del centro para la cortina cósmica.
+		/// Registra la posición actual del centro para la nebula cloud.
 		/// </summary>
 		private void RecordEnergyTrailPosition()
 		{
@@ -245,201 +286,197 @@ namespace Ame.Projectiles.Modes
 			if (_energyTrailCount < ENERGY_TRAIL_LENGTH)
 				_energyTrailCount++;
 
-			_noiseOffset += 0.12f; // Anima la distorsión continuamente
+			_noiseOffset += 0.12f;
 		}
 
 		/// <summary>
-		/// Dibuja la cortina cósmica con distorsión orgánica.
-		/// 3 capas superpuestas con ruido lateral diferente = forma de humo/nebulosa viva.
-		/// Cada segmento se desplaza perpendicular al movimiento con sin() a diferentes
-		/// frecuencias, rompiendo la forma recta y creando bordes irregulares.
+		/// Dibuja la nebula cloud estilo Galaxia.
+		/// 
+		/// En vez de rectángulos estirados (MagicPixel), dibuja CÍRCULOS SUAVES
+		/// superpuestos (puffs) con textura radial gradient generada en runtime.
+		/// Múltiples puffs por posición a diferentes escalas y offsets crean
+		/// la apariencia de humo/nebulosa orgánico.
+		/// 
+		/// 3 capas de puffs:
+		/// 1. EXTERIOR: Grandes, muy transparentes, color oscuro → halo difuso
+		/// 2. MEDIO: Tamaño medio, semi-transparentes → cuerpo del humo
+		/// 3. INTERIOR: Pequeños, más opacos, brillantes → núcleo luminoso
 		/// </summary>
-		private void DrawEnergyTrail()
+		private void DrawNebulaCloud()
 		{
-			if (_energyTrailCount < 3)
+			if (_energyTrailCount < 3 || _softGlow == null)
 				return;
 
-			Texture2D pixel = TextureAssets.MagicPixel.Value;
 			int count = _energyTrailCount;
+			Vector2 glowOrigin = new Vector2(_softGlow.Width * 0.5f, _softGlow.Height * 0.5f);
 
-			// ── CAPA 1: Humo exterior difuso — ruido lento y amplio (forma general de nube) ──
-			for (int i = 0; i < count - 1; i++)
+			// ═══════════════════════════════════════════════════
+			// CAPA 1: HALO EXTERIOR — puffs grandes, muy difusos
+			// Crea el borde suave de la nebulosa
+			// ═══════════════════════════════════════════════════
+			for (int i = 0; i < count; i++)
 			{
-				Vector2 posA = _energyTrailPos[i];
-				Vector2 posB = _energyTrailPos[i + 1];
+				Vector2 pos = _energyTrailPos[i];
+				if (pos == Vector2.Zero) continue;
 
-				if (posA == Vector2.Zero || posB == Vector2.Zero)
-					continue;
+				float progress = (float)i / count;
+				float life = 1f - progress;
+				float fade = life * life; // Quadratic fade
 
-				float progress = (float)i / (float)count;
-				float fade = 1f - progress;
-				fade = (float)Math.Pow(fade, 1.2);
-
-				// Normal perpendicular al movimiento
-				Vector2 dir = (posB - posA).SafeNormalize(Vector2.UnitY);
+				// Dirección perpendicular para desplazamiento lateral
+				Vector2 dir = Vector2.UnitY;
+				if (i < count - 1 && _energyTrailPos[i + 1] != Vector2.Zero)
+					dir = (_energyTrailPos[i + 1] - pos).SafeNormalize(Vector2.UnitY);
 				Vector2 normal = new Vector2(-dir.Y, dir.X);
 
-				// Ruido lento: ondulación amplia que mueve toda la nube
-				float noise1 = (float)Math.Sin(progress * 4f + _noiseOffset * 0.7f) * 12f;
-				// Ruido medio: irregularidad en los bordes
-				float noise2 = (float)Math.Sin(progress * 9f + _noiseOffset * 1.3f + 2.1f) * 6f;
-				float totalNoise = (noise1 + noise2) * fade;
+				// Ruido orgánico para desplazamiento lateral
+				float noise1 = MathF.Sin(progress * 4.5f + _noiseOffset * 0.5f) * 18f;
+				float noise2 = MathF.Sin(progress * 9.2f + _noiseOffset * 0.9f) * 8f;
+				Vector2 offset = normal * (noise1 + noise2) * fade;
 
-				Vector2 offsetA = posA + normal * totalNoise;
-				Vector2 offsetB = posB + normal * totalNoise;
+				// Tamaño: grande con variación animada
+				float sizeBase = MathHelper.Lerp(1.4f, 2.4f, MathF.Sin(progress * MathHelper.Pi));
+				float sizeWobble = 1f + MathF.Sin(progress * 5f + _noiseOffset * 0.7f) * 0.2f;
+				float scale = sizeBase * sizeWobble * fade * Projectile.scale;
+
+				// Fade in suave al inicio
+				if (progress < 0.08f) scale *= progress / 0.08f;
 
 				Color color;
 				if (_isRedVariant)
-				{
-					color = Color.Lerp(
-						new Color(140, 20, 5, 120),
-						new Color(40, 3, 0, 0),
-						progress
-					);
-				}
+					color = Color.Lerp(new Color(120, 15, 5), new Color(40, 3, 0), progress);
 				else
-				{
-					color = Color.Lerp(
-						new Color(70, 8, 95, 120),
-						new Color(10, 0, 18, 0),
-						progress
-					);
-				}
-				color *= fade * 0.4f * Projectile.Opacity;
+					color = Color.Lerp(new Color(35, 5, 5), new Color(8, 1, 1), progress);
 
-				// Ancho variable con distorsión — se ensancha irregular en el medio
-				float cloudSwell = (float)Math.Sin(progress * Math.PI);
-				float widthNoise = (float)Math.Sin(progress * 7f + _noiseOffset * 0.9f) * 0.3f + 1f;
-				float width = MathHelper.Lerp(30f, 55f, cloudSwell) * (1f - progress * 0.4f) * widthNoise;
-				width *= Projectile.scale;
+				color *= fade * 0.40f * Projectile.Opacity;
 
-				DrawRibbonSegment(pixel, offsetA, offsetB, color, width);
+				Vector2 drawPos = pos + offset - Main.screenPosition;
+				Main.EntitySpriteDraw(_softGlow, drawPos, null, color, progress * 2f, glowOrigin, scale, SpriteEffects.None, 0);
+
+				// Segundo puff al lado opuesto (bilateral)
+				Vector2 drawPos2 = pos - offset * 0.7f - Main.screenPosition;
+				color *= 0.75f;
+				Main.EntitySpriteDraw(_softGlow, drawPos2, null, color, -progress * 1.5f, glowOrigin, scale * 0.85f, SpriteEffects.None, 0);
 			}
 
-			// ── CAPA 2: Humo medio — ruido diferente, desplazado al lado opuesto ──
-			for (int i = 0; i < count - 1; i++)
+			// ═══════════════════════════════════════════════════
+			// CAPA 2: CUERPO DEL HUMO — tamaño medio
+			// Forma principal de la nebulosa
+			// ═══════════════════════════════════════════════════
+			for (int i = 0; i < count; i++)
 			{
-				Vector2 posA = _energyTrailPos[i];
-				Vector2 posB = _energyTrailPos[i + 1];
+				Vector2 pos = _energyTrailPos[i];
+				if (pos == Vector2.Zero) continue;
 
-				if (posA == Vector2.Zero || posB == Vector2.Zero)
-					continue;
+				float progress = (float)i / count;
+				float life = 1f - progress;
+				float fade = (float)Math.Pow(life, 2.5);
 
-				float progress = (float)i / (float)count;
-				float fade = 1f - progress;
-				fade = fade * fade;
-
-				Vector2 dir = (posB - posA).SafeNormalize(Vector2.UnitY);
+				Vector2 dir = Vector2.UnitY;
+				if (i < count - 1 && _energyTrailPos[i + 1] != Vector2.Zero)
+					dir = (_energyTrailPos[i + 1] - pos).SafeNormalize(Vector2.UnitY);
 				Vector2 normal = new Vector2(-dir.Y, dir.X);
 
-				// Ruido OPUESTO a la capa 1 — crea volumen bilateral
-				float noise1 = (float)Math.Sin(progress * 5.5f + _noiseOffset * 0.9f + 3.7f) * -10f;
-				float noise2 = (float)Math.Cos(progress * 11f + _noiseOffset * 1.5f) * 5f;
-				float totalNoise = (noise1 + noise2) * fade;
+				// Distorsión más sutil que la capa exterior
+				float noise = MathF.Sin(progress * 6f + _noiseOffset * 0.8f + 1.5f) * 10f;
+				float noise2 = MathF.Cos(progress * 11f + _noiseOffset * 1.2f) * 4f;
+				Vector2 offset = normal * (noise + noise2) * fade;
 
-				Vector2 offsetA = posA + normal * totalNoise;
-				Vector2 offsetB = posB + normal * totalNoise;
+				float cloudSwell = MathF.Sin(progress * MathHelper.Pi);
+				float scale = MathHelper.Lerp(0.8f, 1.5f, cloudSwell) * fade * Projectile.scale;
+				float sizeVar = 1f + MathF.Sin(progress * 7f + _noiseOffset) * 0.15f;
+				scale *= sizeVar;
+
+				if (progress < 0.08f) scale *= progress / 0.08f;
 
 				Color color;
 				if (_isRedVariant)
-				{
-					color = Color.Lerp(
-						new Color(200, 35, 12, 150),
-						new Color(70, 5, 0, 0),
-						progress
-					);
-				}
+					color = Color.Lerp(new Color(220, 45, 15), new Color(90, 8, 0), progress);
 				else
-				{
-					color = Color.Lerp(
-						new Color(100, 12, 135, 150),
-						new Color(20, 0, 30, 0),
-						progress
-					);
-				}
-				color *= fade * 0.5f * Projectile.Opacity;
+					color = Color.Lerp(new Color(50, 8, 6), new Color(15, 2, 1), progress);
 
-				float cloudSwell = (float)Math.Sin(progress * Math.PI + 0.5f);
-				float widthNoise = (float)Math.Sin(progress * 8f + _noiseOffset * 1.1f + 1.5f) * 0.25f + 1f;
-				float width = MathHelper.Lerp(22f, 42f, cloudSwell) * (1f - progress * 0.5f) * widthNoise;
-				width *= Projectile.scale;
+				color *= fade * 0.50f * Projectile.Opacity;
 
-				DrawRibbonSegment(pixel, offsetA, offsetB, color, width);
+				// 2 puffs ligeramente desfasados por posición para densidad
+				Vector2 drawPos = pos + offset - Main.screenPosition;
+				float rot = progress * 3f + _noiseOffset * 0.3f;
+				Main.EntitySpriteDraw(_softGlow, drawPos, null, color, rot, glowOrigin, scale, SpriteEffects.None, 0);
+
+				Vector2 microOffset = normal * MathF.Sin(progress * 13f + _noiseOffset * 1.5f) * 5f * fade;
+				Vector2 drawPos2 = pos + microOffset - Main.screenPosition;
+				color *= 0.8f;
+				Main.EntitySpriteDraw(_softGlow, drawPos2, null, color, -rot * 0.7f, glowOrigin, scale * 0.75f, SpriteEffects.None, 0);
 			}
 
-			// ── CAPA 3: Núcleo brillante — ruido rápido y pequeño (detalle de turbulencia) ──
-			for (int i = 0; i < count - 1; i++)
+			// ═══════════════════════════════════════════════════
+			// CAPA 3: NÚCLEO BRILLANTE — pequeño, más opaco
+			// Centro luminoso de la nebulosa
+			// ═══════════════════════════════════════════════════
+			for (int i = 0; i < count; i++)
 			{
-				Vector2 posA = _energyTrailPos[i];
-				Vector2 posB = _energyTrailPos[i + 1];
+				Vector2 pos = _energyTrailPos[i];
+				if (pos == Vector2.Zero) continue;
 
-				if (posA == Vector2.Zero || posB == Vector2.Zero)
-					continue;
+				float progress = (float)i / count;
+				float life = 1f - progress;
+				float fade = (float)Math.Pow(life, 3);
 
-				float progress = (float)i / (float)count;
-				float fade = 1f - progress;
-				fade = fade * fade * fade; // Cúbico: más concentrado cerca de la espada
+				float scale = MathHelper.Lerp(0.4f, 0.85f, MathF.Sin(progress * MathHelper.Pi));
+				scale *= fade * Projectile.scale;
+				float pulse = 1f + MathF.Sin(_noiseOffset * 2f + progress * 8f) * 0.1f;
+				scale *= pulse;
 
-				Vector2 dir = (posB - posA).SafeNormalize(Vector2.UnitY);
-				Vector2 normal = new Vector2(-dir.Y, dir.X);
-
-				// Ruido rápido: turbulencia fina dentro del humo
-				float noise = (float)Math.Sin(progress * 14f + _noiseOffset * 2f) * 4f * fade;
-
-				Vector2 offsetA = posA + normal * noise;
-				Vector2 offsetB = posB + normal * noise;
+				if (progress < 0.08f) scale *= progress / 0.08f;
 
 				Color color;
 				if (_isRedVariant)
-				{
-					color = Color.Lerp(
-						new Color(255, 70, 25, 180),
-						new Color(140, 10, 0, 0),
-						progress
-					);
-				}
+					color = Color.Lerp(new Color(255, 130, 60), new Color(220, 40, 8), progress);
 				else
-				{
-					color = Color.Lerp(
-						new Color(140, 25, 180, 180),
-						new Color(35, 0, 50, 0),
-						progress
-					);
-				}
-				color *= fade * 0.75f * Projectile.Opacity;
+					color = Color.Lerp(new Color(70, 12, 8), new Color(20, 3, 2), progress);
 
-				// Núcleo estrecho pero intenso
-				float width = MathHelper.Lerp(12f, 4f, progress) * Projectile.scale;
+				color *= fade * 0.70f * Projectile.Opacity;
 
-				DrawRibbonSegment(pixel, offsetA, offsetB, color, width);
+				Vector2 drawPos = pos - Main.screenPosition;
+				Main.EntitySpriteDraw(_softGlow, drawPos, null, color, _noiseOffset + progress, glowOrigin, scale, SpriteEffects.None, 0);
 			}
-		}
 
-		/// <summary>
-		/// Dibuja un segmento de cinta entre dos puntos del mundo.
-		/// MagicPixel (1x1 blanco) estirado como rectángulo rotado.
-		/// </summary>
-		private void DrawRibbonSegment(Texture2D pixel, Vector2 worldA, Vector2 worldB, Color color, float width)
-		{
-			Vector2 screenA = worldA - Main.screenPosition;
-			Vector2 screenB = worldB - Main.screenPosition;
-			Vector2 diff = screenB - screenA;
-			float length = diff.Length();
+			// ═══════════════════════════════════════════════════
+			// CAPA 4: DESTELLOS — puntos brillantes dispersos
+			// Simula estrellas/partículas dentro de la nebulosa
+			// ═══════════════════════════════════════════════════
+			for (int i = 0; i < count; i += 2) // cada 2 posiciones
+			{
+				Vector2 pos = _energyTrailPos[i];
+				if (pos == Vector2.Zero) continue;
 
-			if (length < 1f)
-				return;
+				float progress = (float)i / count;
+				float life = 1f - progress;
+				float fade = life * life * life;
 
-			Main.EntitySpriteDraw(
-				pixel,
-				screenA,
-				new Rectangle(0, 0, 1, 1),
-				color,
-				diff.ToRotation(),
-				new Vector2(0f, 0.5f),
-				new Vector2(length, width),
-				SpriteEffects.None,
-				0
-			);
+				// Solo aparecen intermitentemente (simula centelleo)
+				float sparkle = MathF.Sin(progress * 12f + _noiseOffset * 3f);
+				if (sparkle < 0.3f) continue;
+
+				Vector2 dir = Vector2.UnitY;
+				if (i < count - 1 && _energyTrailPos[i + 1] != Vector2.Zero)
+					dir = (_energyTrailPos[i + 1] - pos).SafeNormalize(Vector2.UnitY);
+				Vector2 normal = new Vector2(-dir.Y, dir.X);
+
+				float sparkleOffset = MathF.Sin(progress * 8f + _noiseOffset * 1.4f) * 15f * fade;
+				Vector2 sparklePos = pos + normal * sparkleOffset - Main.screenPosition;
+
+				float sparkleScale = 0.2f * fade * sparkle * Projectile.scale;
+
+				Color sparkleColor;
+				if (_isRedVariant)
+					sparkleColor = new Color(255, 210, 160);
+				else
+					sparkleColor = new Color(180, 80, 50);
+
+				sparkleColor *= fade * 0.85f * Projectile.Opacity;
+
+				Main.EntitySpriteDraw(_softGlow, sparklePos, null, sparkleColor, 0f, glowOrigin, sparkleScale, SpriteEffects.None, 0);
+			}
 		}
 
 		// ════════════════════════════════════════════════════════════
@@ -515,20 +552,21 @@ namespace Ame.Projectiles.Modes
 			if (_isRedVariant)
 			{
 				baseColor = Color.Lerp(
-					new Color(255, 60, 30),
-					new Color(180, 10, 0),
+					new Color(255, 120, 40),
+					new Color(255, 40, 5),
 					progress
 				);
 			}
 			else
 			{
 				baseColor = Color.Lerp(
-					new Color(120, 20, 160),
-					new Color(30, 0, 40),
+					new Color(200, 60, 30),
+					new Color(80, 10, 5),
 					progress
 				);
 			}
 
+			// A=0 para blending aditivo con el shader FinalFractal
 			baseColor.A = 0;
 			baseColor *= fade * Projectile.Opacity;
 			return baseColor;
@@ -537,10 +575,10 @@ namespace Ame.Projectiles.Modes
 		private float TipWidthFunction(float progress)
 		{
 			float taper = (1f - progress);
-			float width = MathHelper.Lerp(18f, 3f, progress) * taper;
+			float width = MathHelper.Lerp(28f, 8f, progress) * taper;
 
 			if (progress < 0.15f)
-				width *= MathHelper.Lerp(0.6f, 1f, progress / 0.15f);
+				width *= MathHelper.Lerp(0.7f, 1f, progress / 0.15f);
 
 			return width * Projectile.scale * Projectile.Opacity;
 		}
