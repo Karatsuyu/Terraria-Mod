@@ -77,7 +77,17 @@ namespace Ame.Projectiles.Modes
 
 		// Dirección de la punta de la espada
 		private Vector2 BladeDirection => (Projectile.rotation - MathHelper.ToRadians(45f)).ToRotationVector2();
-		private Vector2 BladeTip => Projectile.Center + BladeDirection * (40f * Projectile.scale);
+		// Distancia del centro a la punta = mitad de la diagonal del sprite
+		private float BladeTipDistance
+		{
+			get
+			{
+				Texture2D tex = TextureAssets.Projectile[Projectile.type].Value;
+				// Diagonal / 2 para sprites cuadrados rotados 45°
+				return tex.Width * 0.5f * 1.2f; // 1.2 para que la punta salga un poco más allá del sprite
+			}
+		}
+		private Vector2 BladeTip => Projectile.Center + BladeDirection * (BladeTipDistance * Projectile.scale);
 
 		public override void AI()
 		{
@@ -569,10 +579,10 @@ namespace Ame.Projectiles.Modes
 			}
 			else
 			{
-				// Negro con tinte rojo mínimo → negro puro
+				// Negro: rojo oscuro visible → rojo muy profundo
 				baseColor = Color.Lerp(
-					new Color(40, 4, 2),
-					new Color(10, 1, 0),
+					new Color(140, 15, 8),
+					new Color(60, 5, 2),
 					progress
 				);
 			}
