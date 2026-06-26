@@ -38,7 +38,7 @@ namespace Ame.Projectiles.Modes
 		private const float CONVERGE_AT = 0.58f;
 
 		/// <summary>Multiplicador de la curvatura espiral en vuelo.</summary>
-		private const float CURVE_STRENGTH = 0.38f;
+		private const float CURVE_STRENGTH = 0.06f;
 
 		/// <summary>
 		/// Cuántas partículas spawnear en el burst de convergencia.
@@ -191,12 +191,13 @@ namespace Ame.Projectiles.Modes
 			}
 			else
 			{
-				// FASE 2: salir disparada desde el cursor en dirección opuesta al origen
+				// FASE 2: continuar hacia adelante pasando el cursor (misma dirección de viaje)
 				float p2    = (progress - CONVERGE_AT) / (1f - CONVERGE_AT); // 0 → 1
 				float eased = EaseOutCubic(p2);
 
-				Vector2 exitDir  = (_spawnPosition - _targetCenter).SafeNormalize(Vector2.Zero);
-				float   exitDist = 95f * eased;
+				// Misma dirección que fase 1: spawn → cursor → y más allá
+				Vector2 exitDir  = (_targetCenter - _spawnPosition).SafeNormalize(Vector2.Zero);
+				float   exitDist = 130f * eased;
 				newCenter = _targetCenter + exitDir * exitDist;
 
 				// Burst de partículas al llegar por primera vez
@@ -209,20 +210,16 @@ namespace Ame.Projectiles.Modes
 
 			Projectile.Center = newCenter;
 
-			// ── ROTACIÓN ──────────────────────────────────────────────────
-			// Rota más rápido cerca del cursor
-			float rotSpeed = MathHelper.Pi * 0.07f;
-			if (progress > 0.35f && progress < CONVERGE_AT)
-				rotSpeed *= 1.6f;
+			// ── ROTACIÓN — punta siempre apuntando en dirección de viaje (spawn→cursor→adelante) ──
+			// RecordTipPosition usa (rotation - 45°) para la punta → el offset correcto es +PiOver4
+			Vector2 travelDir = _targetCenter - _spawnPosition; // dirección de viaje fija (no cambia entre fases)
+			if (travelDir.LengthSquared() > 4f)
+				Projectile.rotation = travelDir.ToRotation() + MathHelper.PiOver4;
 
-			float rotDir = (MathF.Sin(Projectile.ai[0] * 2.3f) >= 0f) ? 1f : -1f;
-			Projectile.rotation += rotSpeed * rotDir;
-
-			// ── SPRITE DIRECTION ──────────────────────────────────────────
-			Vector2 toCursor = _targetCenter - Projectile.Center;
-			if (toCursor.LengthSquared() > 4f)
+			// ── SPRITE DIRECTION — basado en dirección de viaje real ──────
+			if (travelDir.LengthSquared() > 4f)
 			{
-				Projectile.spriteDirection = toCursor.X > 0f ? 1 : -1;
+				Projectile.spriteDirection = travelDir.X > 0f ? 1 : -1;
 				Projectile.direction       = Projectile.spriteDirection;
 			}
 

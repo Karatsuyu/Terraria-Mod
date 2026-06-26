@@ -311,8 +311,8 @@ namespace Ame.Items
 						spawnAngle = Main.rand.NextFloat(0f, MathHelper.TwoPi);
 					}
 
-					// Radio de spawn: leve variación para que no sean perfectamente circulares
-					float spawnRadius = 155f + Main.rand.NextFloat(-30f, 55f);
+						// Radio de spawn: rango amplio para que llueven desde cerca y muy lejos del cursor
+					float spawnRadius = 80f + Main.rand.NextFloat(0f, 520f);
 
 					// Espada aleatoria de las 19
 					int bladeType = fractalTypes[Main.rand.Next(fractalTypes.Length)];
@@ -320,7 +320,7 @@ namespace Ame.Items
 					// velocity codifica la posición del cursor (leída en AmeFractalBlade.AI init)
 					Projectile.NewProjectile(
 						source,
-						player.MountedCenter,                 // posición inicial (ignorada por ShouldUpdatePosition=false)
+						cursorPos,                             // posición inicial = cursor (fix: ya no flashea desde el jugador)
 						new Vector2(cursorPos.X, cursorPos.Y), // velocity = cursor
 						bladeType,
 						damage,
