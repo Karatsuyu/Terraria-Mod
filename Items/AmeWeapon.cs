@@ -28,6 +28,8 @@ namespace Ame.Items
 
 	// 🔥 Icono animado para Melee2
 	private static Asset<Texture2D> melee2Texture;
+	// 🔥 Icono para Melee1
+	private static Asset<Texture2D> melee1Texture;
 	private int melee2FrameCounter = 0;
 	private int melee2Frame = 0;
 	private int melee2FrameCount = 1; // Se calcula automáticamente al cargar la textura
@@ -37,6 +39,8 @@ namespace Ame.Items
 		{
 			// Cargar textura animada del icono Melee2
 			melee2Texture = ModContent.Request<Texture2D>("Ame/Items/AmeWeapon_Melee2");
+			// Cargar textura para Melee1
+			melee1Texture = ModContent.Request<Texture2D>("Ame/Projectiles/Modes/IconoMelee1");
 		}
 
 	// Textura base guardada para poder restaurar
@@ -226,71 +230,116 @@ namespace Ame.Items
 		switch (CurrentMode)
 		{
 			case WeaponMode.Melee1:
-				// Sistema Zenith con interpolación exacta
+			{
+				// ════════════════════════════════════════════════════════
+				// FIRST FRACTAL — Espadas desde el cursor
+				// Las espadas nacen alrededor del cursor y convergen al centro.
+				// ════════════════════════════════════════════════════════
+
 				int shotNumber = (player.itemAnimationMax - player.itemAnimation) / player.itemTime;
-				
-				// 🔥 CURSOR GUARDADO - Guardar SOLO en el primer disparo
-				Vector2 targetPos;
+
+				// Guardar el cursor en el primer disparo del swing
+				Vector2 cursorPos;
 				if (shotNumber == 0)
 				{
-					// Primer shot: guardar cursor en ai[2] (parte entera) para compartir entre proyectiles
-					targetPos = Main.MouseWorld;
-					Projectiles.Modes.AmeZenithBlade.SharedCursorX = targetPos.X;
-					Projectiles.Modes.AmeZenithBlade.SharedCursorY = targetPos.Y;
+					cursorPos = Main.MouseWorld;
+					// Guardar en variables estáticas para los shots siguientes
+					Projectiles.Modes.AmeFractalBlade.SharedCursorX = cursorPos.X;
+					Projectiles.Modes.AmeFractalBlade.SharedCursorY = cursorPos.Y;
+
+					// Spawnear el rift visual SOLO en el primer shot (una vez por swing)
+					Projectile.NewProjectile(
+						source,
+						cursorPos,                   // el rift nace en el cursor
+						Vector2.Zero,                // no se mueve
+						ModContent.ProjectileType<Projectiles.Modes.AmeFractalRift>(),
+						0,                           // sin daño
+						0f,
+						player.whoAmI,
+						3f,                          // ai[0] = número de espadas (info visual)
+						0f
+					);
 				}
 				else
 				{
-					// Shots 2-6: usar cursor guardado
-					targetPos = new Vector2(Projectiles.Modes.AmeZenithBlade.SharedCursorX, 
-											Projectiles.Modes.AmeZenithBlade.SharedCursorY);
+					// Shots siguientes: usar cursor guardado del primer shot
+					cursorPos = new Vector2(
+						Projectiles.Modes.AmeFractalBlade.SharedCursorX,
+						Projectiles.Modes.AmeFractalBlade.SharedCursorY
+					);
 				}
-				
-				// Variación del arco aleatorio (-100 a 100)
-				float arcVariation = Main.rand.Next(-100, 101);
-				
-				// Velocity codifica dirección de órbita (varía por shot)
-				Vector2 velocityDirection = (targetPos - player.MountedCenter).SafeNormalize(Vector2.Zero);
-				
-				// DISPAROS 2-6: Variar la dirección de órbita pero MISMO destino
-				if (shotNumber >= 1)
+
+				// Array de las 19 espadas fractales
+				int[] fractalTypes = new int[]
 				{
-					NPC target = FindNearestEnemy(targetPos, 400f);
-					
-					if (target != null)
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade01>(),
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade02>(),
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade03>(),
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade04>(),
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade05>(),
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade06>(),
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade07>(),
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade08>(),
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade09>(),
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade10>(),
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade11>(),
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade12>(),
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade13>(),
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade14>(),
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade15>(),
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade16>(),
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade17>(),
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade18>(),
+					ModContent.ProjectileType<Projectiles.Modes.AmeFractalBlade19>(),
+				};
+
+				// Primer shot: 3 espadas equidistantes (forman triángulo)
+				// Shots 1-5: 1 espada en ángulo aleatorio cada uno
+				int bladesThisShot = (shotNumber == 0) ? 3 : 1;
+
+				for (int b = 0; b < bladesThisShot; b++)
+				{
+					float spawnAngle;
+					if (shotNumber == 0 && bladesThisShot > 1)
 					{
-						velocityDirection = (target.Center - player.MountedCenter).SafeNormalize(Vector2.Zero);
+						// Distribuir equiangularmente + rotación base aleatoria
+						float baseAngle = Main.rand.NextFloat(0f, MathHelper.TwoPi);
+						spawnAngle = baseAngle + (MathHelper.TwoPi / bladesThisShot) * b;
 					}
 					else
 					{
-						// Dispersión en la dirección de órbita
-						float angleVariation = Main.rand.NextFloat(-0.5f, 0.5f);
-						velocityDirection = velocityDirection.RotatedBy(angleVariation);
+						spawnAngle = Main.rand.NextFloat(0f, MathHelper.TwoPi);
 					}
+
+					// Radio de spawn: leve variación para que no sean perfectamente circulares
+					float spawnRadius = 155f + Main.rand.NextFloat(-30f, 55f);
+
+					// Espada aleatoria de las 19
+					int bladeType = fractalTypes[Main.rand.Next(fractalTypes.Length)];
+
+					// velocity codifica la posición del cursor (leída en AmeFractalBlade.AI init)
+					Projectile.NewProjectile(
+						source,
+						player.MountedCenter,                 // posición inicial (ignorada por ShouldUpdatePosition=false)
+						new Vector2(cursorPos.X, cursorPos.Y), // velocity = cursor
+						bladeType,
+						damage,
+						knockback,
+						player.whoAmI,
+						spawnAngle,   // ai[0] = ángulo de spawn
+						spawnRadius   // ai[1] = radio de spawn
+					);
 				}
-				
-				// Velocidad codifica dirección de órbita
-				Vector2 baseVelocity = velocityDirection * 10f;
-				
-				// Crear proyectil
-				Projectile.NewProjectile(
-					source,
-					player.MountedCenter,
-					baseVelocity,
-					ModContent.ProjectileType<Projectiles.Modes.AmeZenithBlade>(),
-					damage,
-					knockback,
-					player.whoAmI,
-					arcVariation,  // ai[0] - variación del arco
-					0f             // ai[1] - no usado
-				);
+
 				return false;
+			}
 
 			case WeaponMode.Melee2:
 				// 🔥 ZENITH VANILLA PORT 1:1
 				int num164 = (player.itemAnimationMax - player.itemAnimation) / player.itemTime;
 
-				// 🔥 Perfil de textura/color (CRITICAL)
-				int profile = FinalFractalHelper.GetRandomProfileIndex();
+				// 🔥 Perfil aleatorio para cada espada
+				int profile = Main.rand.Next(5000, 5020);
 
 				if (num164 == 0)
 					profile = 4956; // primera espada siempre Zenith base
@@ -440,41 +489,43 @@ namespace Ame.Items
 		// 🔥 DIBUJO EN INVENTARIO - Icono animado para Melee2
 		public override bool PreDrawInInventory(SpriteBatch spriteBatch, Vector2 position, Rectangle frame, Color drawColor, Color itemColor, Vector2 origin, float scale)
 		{
+			if (CurrentMode == WeaponMode.Melee1 && melee1Texture != null && melee1Texture.IsLoaded)
+			{
+				Texture2D tex = melee1Texture.Value;
+				Rectangle sourceRect = new Rectangle(0, 0, tex.Width, tex.Height);
+				Vector2 drawOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
+				spriteBatch.Draw(tex, position, sourceRect, drawColor, 0f, drawOrigin, scale, SpriteEffects.None, 0f);
+				return false;
+			}
+
 			if (CurrentMode != WeaponMode.Melee2 || melee2Texture == null || !melee2Texture.IsLoaded)
 				return true; // Dibujar icono normal para otros modos
 
-			Texture2D tex = melee2Texture.Value;
+			Texture2D melee2Tex = melee2Texture.Value;
 			
-			// Calcular número de frames basado en las dimensiones (120x120 por frame)
-			int frameHeight = tex.Width; // Cada frame es cuadrado (120x120)
-			melee2FrameCount = tex.Height / frameHeight;
+			int frameHeight = melee2Tex.Width;
+			melee2FrameCount = melee2Tex.Height / frameHeight;
 			if (melee2FrameCount < 1) melee2FrameCount = 1;
 
-			// Rectángulo del frame actual
-			Rectangle sourceRect = new Rectangle(0, melee2Frame * frameHeight, tex.Width, frameHeight);
+			Rectangle melee2SourceRect = new Rectangle(0, melee2Frame * frameHeight, melee2Tex.Width, frameHeight);
 			
-			// Escalar para llenar el slot de inventario
-			// 'scale' de Terraria está calculado para un item de Item.width x Item.height (40x40)
-			// Nuestro frame es 120x120, así que Terraria no sabe que es más grande.
-			// Usamos: finalScale = scale (que ya llena el slot para 40px) sin reducir por frameHeight
 			float finalScale = scale * 0.85f;
 			
-			// Centrar en la posición del slot
-			Vector2 drawOrigin = new Vector2(tex.Width / 2f, frameHeight / 2f);
+			Vector2 melee2DrawOrigin = new Vector2(melee2Tex.Width / 2f, frameHeight / 2f);
 
 			spriteBatch.Draw(
-				tex,
+				melee2Tex,
 				position,
-				sourceRect,
+				melee2SourceRect,
 				drawColor,
 				0f,
-				drawOrigin,
+				melee2DrawOrigin,
 				finalScale,
 				SpriteEffects.None,
 				0f
 			);
 
-			return false; // No dibujar el icono normal
+			return false;
 		}
 
 		// 🔥 Mantener la textura principal actualizada para mods externos (ej: arma en espalda)
@@ -507,6 +558,12 @@ namespace Ame.Items
 				// Asignar la instancia persistente (Terraria llama GetFrame() que avanza la animación)
 				Main.itemAnimations[Item.type] = melee2DrawAnim;
 			}
+			else if (CurrentMode == WeaponMode.Melee1 && melee1Texture != null && melee1Texture.IsLoaded)
+			{
+				// Usar el icono de Melee1
+				Terraria.GameContent.TextureAssets.Item[Item.type] = melee1Texture;
+				Main.itemAnimations[Item.type] = null;
+			}
 			else
 			{
 				// Restaurar textura y animación original
@@ -520,27 +577,37 @@ namespace Ame.Items
 		// 🔥 DIBUJO EN MUNDO - Icono animado cuando el arma está tirada
 		public override bool PreDrawInWorld(SpriteBatch spriteBatch, Color lightColor, Color alphaColor, ref float rotation, ref float scale, int whoAmI)
 		{
+			if (CurrentMode == WeaponMode.Melee1 && melee1Texture != null && melee1Texture.IsLoaded)
+			{
+				Texture2D tex = melee1Texture.Value;
+				Rectangle sourceRect = new Rectangle(0, 0, tex.Width, tex.Height);
+				Vector2 drawOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
+				Vector2 drawPos = Item.Center - Main.screenPosition;
+				spriteBatch.Draw(tex, drawPos, sourceRect, lightColor, rotation, drawOrigin, scale, SpriteEffects.None, 0f);
+				return false;
+			}
+
 			if (CurrentMode != WeaponMode.Melee2 || melee2Texture == null || !melee2Texture.IsLoaded)
 				return true;
 
-			Texture2D tex = melee2Texture.Value;
+			Texture2D melee2Tex = melee2Texture.Value;
 			
-			int frameHeight = tex.Width;
-			melee2FrameCount = tex.Height / frameHeight;
+			int frameHeight = melee2Tex.Width;
+			melee2FrameCount = melee2Tex.Height / frameHeight;
 			if (melee2FrameCount < 1) melee2FrameCount = 1;
 
-			Rectangle sourceRect = new Rectangle(0, melee2Frame * frameHeight, tex.Width, frameHeight);
+			Rectangle melee2SourceRect = new Rectangle(0, melee2Frame * frameHeight, melee2Tex.Width, frameHeight);
 			
-			Vector2 drawOrigin = new Vector2(tex.Width / 2f, frameHeight / 2f);
-			Vector2 drawPos = Item.Center - Main.screenPosition;
+			Vector2 melee2DrawOrigin = new Vector2(melee2Tex.Width / 2f, frameHeight / 2f);
+			Vector2 melee2DrawPos = Item.Center - Main.screenPosition;
 
 			spriteBatch.Draw(
-				tex,
-				drawPos,
-				sourceRect,
+				melee2Tex,
+				melee2DrawPos,
+				melee2SourceRect,
 				lightColor,
 				rotation,
-				drawOrigin,
+				melee2DrawOrigin,
 				scale,
 				SpriteEffects.None,
 				0f

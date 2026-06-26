@@ -263,7 +263,7 @@ namespace Ame.Projectiles.Modes
 			// ══════════════════════════════════════════════════════
 			// CAPA 2: RIBBON PUNTA — VertexStrip (requiere SpriteBatch switch)
 			// ══════════════════════════════════════════════════════
-			DrawTipVertexStrip();
+			// DrawTipVertexStrip(); // TEMPORALMENTE DESACTIVADO — para ver el arma sin ribbon
 
 			// ══════════════════════════════════════════════════════
 			// CAPA 3: ESPADA PRINCIPAL

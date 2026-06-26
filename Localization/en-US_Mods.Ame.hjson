@@ -44,6 +44,26 @@ Projectiles: {
 	AmeBlade02.DisplayName: Ame Blade02
 	AmeBlade01.DisplayName: Ame Blade01
 	AmeBlade19.DisplayName: Ame Blade19
+	AmeFractalBlade19.DisplayName: Ame Fractal Blade19
+	AmeFractalBlade18.DisplayName: Ame Fractal Blade18
+	AmeFractalBlade17.DisplayName: Ame Fractal Blade17
+	AmeFractalBlade16.DisplayName: Ame Fractal Blade16
+	AmeFractalBlade15.DisplayName: Ame Fractal Blade15
+	AmeFractalBlade14.DisplayName: Ame Fractal Blade14
+	AmeFractalBlade13.DisplayName: Ame Fractal Blade13
+	AmeFractalBlade12.DisplayName: Ame Fractal Blade12
+	AmeFractalBlade11.DisplayName: Ame Fractal Blade11
+	AmeFractalBlade10.DisplayName: Ame Fractal Blade10
+	AmeFractalBlade09.DisplayName: Ame Fractal Blade09
+	AmeFractalBlade08.DisplayName: Ame Fractal Blade08
+	AmeFractalBlade07.DisplayName: Ame Fractal Blade07
+	AmeFractalBlade06.DisplayName: Ame Fractal Blade06
+	AmeFractalBlade05.DisplayName: Ame Fractal Blade05
+	AmeFractalBlade04.DisplayName: Ame Fractal Blade04
+	AmeFractalBlade03.DisplayName: Ame Fractal Blade03
+	AmeFractalBlade02.DisplayName: Ame Fractal Blade02
+	AmeFractalBlade01.DisplayName: Ame Fractal Blade01
+	AmeFractalRift.DisplayName: Ame Fractal Rift
 }
 
 Buffs: {

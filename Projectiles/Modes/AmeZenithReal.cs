@@ -144,13 +144,9 @@ namespace Ame.Projectiles.Modes
 				Utils.GetLerpValue(120f, 115f, Projectile.localAI[0], clamped: true);
 		}
 
-	// 🔥 VANILLA RENDERING - Use FinalFractalHelper.Draw() with profile system
 	public override bool PreDraw(ref Color lightColor)
 	{
-		// Use vanilla Zenith drawing system with VertexStrip and shaders
-		FinalFractalHelper helper = new FinalFractalHelper();
-		helper.Draw(Projectile);
-		return false; // Skip default drawing
+		return true;
 	}		public override bool? Colliding(Rectangle projHitbox, Rectangle targetHitbox)
 		{
 			// Hitbox expandido
