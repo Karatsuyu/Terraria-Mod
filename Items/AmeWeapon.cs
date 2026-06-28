@@ -26,10 +26,18 @@ namespace Ame.Items
 	public WeaponMode CurrentMode = WeaponMode.Melee1;
 	private bool justChangedMode = false;
 
+	// ── MAGIC BEAM ──────────────────────────────────────────────
+	private float _beamCharge          = 0f;
+	private int   _chargeProjectileId  = -1;
+	private int   _beamProjectileId    = -1;
+	private int   _manaDrainTimer      = 0;
+	// ────────────────────────────────────────────────────────────
+
 	// 🔥 Icono animado para Melee2
 	private static Asset<Texture2D> melee2Texture;
-	// 🔥 Icono para Melee1
+	// 🔥 Iconos
 	private static Asset<Texture2D> melee1Texture;
+	private static Asset<Texture2D> summonTexture;
 	private int melee2FrameCounter = 0;
 	private int melee2Frame = 0;
 	private int melee2FrameCount = 1; // Se calcula automáticamente al cargar la textura
@@ -39,8 +47,9 @@ namespace Ame.Items
 		{
 			// Cargar textura animada del icono Melee2
 			melee2Texture = ModContent.Request<Texture2D>("Ame/Items/AmeWeapon_Melee2");
-			// Cargar textura para Melee1
+			// Cargar texturas para otros modos
 			melee1Texture = ModContent.Request<Texture2D>("Ame/Projectiles/Modes/IconoMelee1");
+			summonTexture = ModContent.Request<Texture2D>("Ame/Projectiles/Modes/IconoModoInvocador");
 		}
 
 	// Textura base guardada para poder restaurar
@@ -111,13 +120,28 @@ namespace Ame.Items
 			Item.useTime = 15;
 			Item.useAnimation = 15;
 			Item.UseSound = null; // Sin sonido de ataque
+			Item.autoReuse = true; // Para click derecho el autoreuse da igual porque lo capamos por justChangedMode
 		}
 		else
 		{
-			// Click izquierdo normal
-			Item.useTime = 5;
-			Item.useAnimation = 30;
-			Item.UseSound = SoundID.Item1;
+			// Click izquierdo
+			if (CurrentMode == WeaponMode.Summon)
+			{
+				// En modo Summon, desactivar auto-reuse para que el click izquierdo funcione como un botón ON/OFF limpio
+				// (Si fuera auto-reuse, spamearía on/off 60 veces por segundo mientras dejas presionado)
+				Item.useTime = 30;
+				Item.useAnimation = 30;
+				Item.UseSound = SoundID.Item44; // Sonido típico de invocación
+				Item.autoReuse = false; 
+			}
+			else
+			{
+				// Resto de modos: ataque normal
+				Item.useTime = 5;
+				Item.useAnimation = 30;
+				Item.UseSound = SoundID.Item1;
+				Item.autoReuse = true;
+			}
 		}
 		return true;
 	}
@@ -141,8 +165,11 @@ namespace Ame.Items
 		return true;
 	}
 
-	private void CycleMode()
+		private void CycleMode()
 		{
+			// Nota: las espadas de Summon ahora persisten al cambiar de modo, 
+			// solo se desactivan con click izquierdo en modo Summon.
+
 			int next = ((int)CurrentMode + 1) % Enum.GetValues(typeof(WeaponMode)).Length;
 			CurrentMode = (WeaponMode)next;
 		}
@@ -412,18 +439,9 @@ namespace Ame.Items
 			return false;
 
 			case WeaponMode.Magic:
-					if (player.statMana >= 10)
-					{
-						player.statMana -= 10;
-						Projectile.NewProjectile(source, position, velocity,
-							ModContent.ProjectileType<Projectiles.Modes.AmeMagicBlast>(),
-							damage, knockback, player.whoAmI);
-					}
-					else
-					{
-						Main.NewText("¡No tienes suficiente maná!", new Color(100, 100, 255));
-					}
-					break;
+				// El beam lo maneja completamente HoldItem().
+				// Shoot() no hace nada en este modo.
+				return false;
 
 				case WeaponMode.Ranged:
 					Projectile.NewProjectile(source, position, velocity,
@@ -431,10 +449,10 @@ namespace Ame.Items
 						damage, knockback, player.whoAmI);
 					break;
 
-				case WeaponMode.Summon:
-					Projectile.NewProjectile(source, position, Vector2.Zero,
-						ModContent.ProjectileType<Projectiles.Modes.AmeSummonMinion>(),
-						damage, knockback, player.whoAmI);
+			case WeaponMode.Summon:
+					// Toggle ON/OFF con click izquierdo
+					var amePlayer = player.GetModPlayer<Players.AmePlayer>();
+					amePlayer.ToggleSummonSwords((Items.AmeWeapon)player.HeldItem.ModItem);
 					break;
 
 				case WeaponMode.Clone:
@@ -462,6 +480,132 @@ namespace Ame.Items
 			// Animar solo cuando está en el mundo (drop)
 			if (CurrentMode == WeaponMode.Melee2)
 				UpdateMelee2Animation();
+		}
+
+		public override void HoldItem(Player player)
+		{
+			if (CurrentMode != WeaponMode.Magic) return;
+			if (player.altFunctionUse == 2)      return; // click derecho = cambiar modo
+
+			bool holdingClick = player.controlUseItem && player.itemAnimation > 0;
+
+			// ── CARGANDO ──────────────────────────────────────────
+			if (holdingClick && !IsBeamFiring())
+			{
+				// Crear el círculo de carga si no existe
+				if (!IsChargeAlive())
+				{
+					_beamCharge = 0f;
+					int id = Projectile.NewProjectile(
+						player.GetSource_ItemUse(Item),
+						player.MountedCenter,
+						Vector2.Zero,
+						ModContent.ProjectileType<Projectiles.Modes.AmeBeamCharge>(),
+						0, 0f, player.whoAmI
+					);
+					_chargeProjectileId = (id >= 0 && id < Main.maxProjectiles) ? id : -1;
+				}
+
+				// Avanzar carga
+				if (_beamCharge < Projectiles.Modes.AmeBeamCharge.CHARGE_TIME)
+					_beamCharge += 1f;
+
+				// Escribir progreso en el proyectil de carga
+				if (IsChargeAlive())
+					Main.projectile[_chargeProjectileId].ai[0] = _beamCharge;
+
+				// ── CARGA COMPLETA → disparar beam ────────────────
+				if (_beamCharge >= Projectiles.Modes.AmeBeamCharge.CHARGE_TIME && !IsBeamFiring())
+				{
+					// Matar el círculo de carga
+					KillCharge();
+
+					// Spawnear el beam si hay maná
+					if (player.statMana >= 10)
+					{
+						Vector2 dir = (Main.MouseWorld - player.MountedCenter).SafeNormalize(Vector2.UnitX);
+						int id = Projectile.NewProjectile(
+							player.GetSource_ItemUse(Item),
+							player.MountedCenter,
+							dir,
+							ModContent.ProjectileType<Projectiles.Modes.AmeBeam>(),
+							player.GetWeaponDamage(Item),
+							Item.knockBack,
+							player.whoAmI
+						);
+						_beamProjectileId = (id >= 0 && id < Main.maxProjectiles) ? id : -1;
+					}
+					else
+					{
+						Main.NewText("¡Sin maná!", new Color(220, 40, 20));
+						_beamCharge = 0f;
+					}
+				}
+			}
+
+			// ── BEAM ACTIVO: mantenerlo vivo y drenar maná ────────
+			if (holdingClick && IsBeamFiring())
+			{
+				Projectile beam = Main.projectile[_beamProjectileId];
+
+				// Drenar maná continuo
+				_manaDrainTimer++;
+				if (_manaDrainTimer >= 6) // cada 6 ticks (~10 veces por segundo)
+				{
+					_manaDrainTimer = 0;
+					if (player.statMana >= 2)
+					{
+						player.statMana -= 2;
+						player.manaRegenDelay = 120;
+					}
+					else
+					{
+						// Sin maná → cortar el beam
+						KillBeam();
+						_beamCharge = 0f;
+						return;
+					}
+				}
+
+				// Renovar el beam (reset timeLeft para que no muera)
+				beam.timeLeft = 8;
+
+			}
+			// ── SOLTÓ EL CLICK o ya no puede disparar ────────────
+			else if (!holdingClick)
+			{
+				KillCharge();
+				KillBeam();
+				_beamCharge    = 0f;
+				_manaDrainTimer = 0;
+			}
+		}
+
+		// Helpers del beam
+		private bool IsChargeAlive()
+		{
+			if (_chargeProjectileId < 0 || _chargeProjectileId >= Main.maxProjectiles) return false;
+			Projectile p = Main.projectile[_chargeProjectileId];
+			return p.active && p.type == ModContent.ProjectileType<Projectiles.Modes.AmeBeamCharge>();
+		}
+
+		private bool IsBeamFiring()
+		{
+			if (_beamProjectileId < 0 || _beamProjectileId >= Main.maxProjectiles) return false;
+			Projectile p = Main.projectile[_beamProjectileId];
+			return p.active && p.type == ModContent.ProjectileType<Projectiles.Modes.AmeBeam>();
+		}
+
+		private void KillCharge()
+		{
+			if (IsChargeAlive()) Main.projectile[_chargeProjectileId].Kill();
+			_chargeProjectileId = -1;
+		}
+
+		private void KillBeam()
+		{
+			if (IsBeamFiring()) Main.projectile[_beamProjectileId].Kill();
+			_beamProjectileId = -1;
 		}
 
 		public override void UpdateInventory(Player player)
@@ -492,6 +636,14 @@ namespace Ame.Items
 			if (CurrentMode == WeaponMode.Melee1 && melee1Texture != null && melee1Texture.IsLoaded)
 			{
 				Texture2D tex = melee1Texture.Value;
+				Rectangle sourceRect = new Rectangle(0, 0, tex.Width, tex.Height);
+				Vector2 drawOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
+				spriteBatch.Draw(tex, position, sourceRect, drawColor, 0f, drawOrigin, scale, SpriteEffects.None, 0f);
+				return false;
+			}
+			else if (CurrentMode == WeaponMode.Summon && summonTexture != null && summonTexture.IsLoaded)
+			{
+				Texture2D tex = summonTexture.Value;
 				Rectangle sourceRect = new Rectangle(0, 0, tex.Width, tex.Height);
 				Vector2 drawOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
 				spriteBatch.Draw(tex, position, sourceRect, drawColor, 0f, drawOrigin, scale, SpriteEffects.None, 0f);
@@ -564,6 +716,12 @@ namespace Ame.Items
 				Terraria.GameContent.TextureAssets.Item[Item.type] = melee1Texture;
 				Main.itemAnimations[Item.type] = null;
 			}
+			else if (CurrentMode == WeaponMode.Summon && summonTexture != null && summonTexture.IsLoaded)
+			{
+				// Usar el icono de Summon
+				Terraria.GameContent.TextureAssets.Item[Item.type] = summonTexture;
+				Main.itemAnimations[Item.type] = null;
+			}
 			else
 			{
 				// Restaurar textura y animación original
@@ -580,6 +738,15 @@ namespace Ame.Items
 			if (CurrentMode == WeaponMode.Melee1 && melee1Texture != null && melee1Texture.IsLoaded)
 			{
 				Texture2D tex = melee1Texture.Value;
+				Rectangle sourceRect = new Rectangle(0, 0, tex.Width, tex.Height);
+				Vector2 drawOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
+				Vector2 drawPos = Item.Center - Main.screenPosition;
+				spriteBatch.Draw(tex, drawPos, sourceRect, lightColor, rotation, drawOrigin, scale, SpriteEffects.None, 0f);
+				return false;
+			}
+			else if (CurrentMode == WeaponMode.Summon && summonTexture != null && summonTexture.IsLoaded)
+			{
+				Texture2D tex = summonTexture.Value;
 				Rectangle sourceRect = new Rectangle(0, 0, tex.Width, tex.Height);
 				Vector2 drawOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
 				Vector2 drawPos = Item.Center - Main.screenPosition;

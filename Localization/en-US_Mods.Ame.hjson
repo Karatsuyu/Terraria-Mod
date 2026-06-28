@@ -64,6 +64,27 @@ Projectiles: {
 	AmeFractalBlade02.DisplayName: Ame Fractal Blade02
 	AmeFractalBlade01.DisplayName: Ame Fractal Blade01
 	AmeFractalRift.DisplayName: Ame Fractal Rift
+	AmeSummonSword07.DisplayName: Ame Summon Sword07
+	AmeSummonSword06.DisplayName: Ame Summon Sword06
+	AmeSummonSword05.DisplayName: Ame Summon Sword05
+	AmeSummonSword04.DisplayName: Ame Summon Sword04
+	AmeSummonSword03.DisplayName: Ame Summon Sword03
+	AmeSummonSword02.DisplayName: Ame Summon Sword02
+	AmeSummonSword01.DisplayName: Ame Summon Sword01
+	AmeSummonSword08.DisplayName: Ame Summon Sword08
+	AmeSummonSword09.DisplayName: Ame Summon Sword09
+	AmeSummonSword10.DisplayName: Ame Summon Sword10
+	AmeSummonSword11.DisplayName: Ame Summon Sword11
+	AmeSummonSword12.DisplayName: Ame Summon Sword12
+	AmeSummonSword13.DisplayName: Ame Summon Sword13
+	AmeSummonSword14.DisplayName: Ame Summon Sword14
+	AmeSummonSword15.DisplayName: Ame Summon Sword15
+	AmeSummonSword16.DisplayName: Ame Summon Sword16
+	AmeSummonSword17.DisplayName: Ame Summon Sword17
+	AmeSummonSword18.DisplayName: Ame Summon Sword18
+	AmeSummonSword19.DisplayName: Ame Summon Sword19
+	AmeBeamCharge.DisplayName: Ame Beam Charge
+	AmeBeam.DisplayName: Ame Beam
 }
 
 Buffs: {
