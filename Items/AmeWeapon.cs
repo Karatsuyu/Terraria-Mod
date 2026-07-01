@@ -489,57 +489,26 @@ namespace Ame.Items
 
 			bool holdingClick = player.controlUseItem && player.itemAnimation > 0;
 
-			// ── CARGANDO ──────────────────────────────────────────
+			// ── INICIAR AMEBEAM (ÉL MANEJA SU CARGA INTERNAMENTE) ────────
 			if (holdingClick && !IsBeamFiring())
 			{
-				// Crear el círculo de carga si no existe
-				if (!IsChargeAlive())
+				if (player.statMana >= 10)
 				{
-					_beamCharge = 0f;
+					Vector2 dir = (Main.MouseWorld - player.MountedCenter).SafeNormalize(Vector2.UnitX);
 					int id = Projectile.NewProjectile(
 						player.GetSource_ItemUse(Item),
 						player.MountedCenter,
-						Vector2.Zero,
-						ModContent.ProjectileType<Projectiles.Modes.AmeBeamCharge>(),
-						0, 0f, player.whoAmI
+						dir,
+						ModContent.ProjectileType<Projectiles.Modes.AmeBeam>(),
+						player.GetWeaponDamage(Item),
+						Item.knockBack,
+						player.whoAmI
 					);
-					_chargeProjectileId = (id >= 0 && id < Main.maxProjectiles) ? id : -1;
+					_beamProjectileId = (id >= 0 && id < Main.maxProjectiles) ? id : -1;
 				}
-
-				// Avanzar carga
-				if (_beamCharge < Projectiles.Modes.AmeBeamCharge.CHARGE_TIME)
-					_beamCharge += 1f;
-
-				// Escribir progreso en el proyectil de carga
-				if (IsChargeAlive())
-					Main.projectile[_chargeProjectileId].ai[0] = _beamCharge;
-
-				// ── CARGA COMPLETA → disparar beam ────────────────
-				if (_beamCharge >= Projectiles.Modes.AmeBeamCharge.CHARGE_TIME && !IsBeamFiring())
+				else
 				{
-					// Matar el círculo de carga
-					KillCharge();
-
-					// Spawnear el beam si hay maná
-					if (player.statMana >= 10)
-					{
-						Vector2 dir = (Main.MouseWorld - player.MountedCenter).SafeNormalize(Vector2.UnitX);
-						int id = Projectile.NewProjectile(
-							player.GetSource_ItemUse(Item),
-							player.MountedCenter,
-							dir,
-							ModContent.ProjectileType<Projectiles.Modes.AmeBeam>(),
-							player.GetWeaponDamage(Item),
-							Item.knockBack,
-							player.whoAmI
-						);
-						_beamProjectileId = (id >= 0 && id < Main.maxProjectiles) ? id : -1;
-					}
-					else
-					{
-						Main.NewText("¡Sin maná!", new Color(220, 40, 20));
-						_beamCharge = 0f;
-					}
+					Main.NewText("¡Sin maná!", new Color(220, 40, 20));
 				}
 			}
 
@@ -562,21 +531,19 @@ namespace Ame.Items
 					{
 						// Sin maná → cortar el beam
 						KillBeam();
-						_beamCharge = 0f;
 						return;
 					}
 				}
 
-				// Renovar el beam (reset timeLeft para que no muera)
-				beam.timeLeft = 8;
-
+				// Renovar el beam (reset timeLeft para que no muera en caso de que su propia máquina de estados no lo haga)
+				// El beam ahora maneja su propio tiempo (500 frames) en State 1, 
+				// así que solo prevenimos que muera prematuramente si la animación se pausa.
+				beam.timeLeft = Math.Max(beam.timeLeft, 8); 
 			}
 			// ── SOLTÓ EL CLICK o ya no puede disparar ────────────
 			else if (!holdingClick)
 			{
-				KillCharge();
 				KillBeam();
-				_beamCharge    = 0f;
 				_manaDrainTimer = 0;
 			}
 		}

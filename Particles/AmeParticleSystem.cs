@@ -9,15 +9,13 @@ namespace Ame.Particles
 {
 	/// <summary>
 	/// Sistema de partículas independiente para el mod Ame.
-	/// Emula el comportamiento de HeavySmokeParticle de Calamity
-	/// sin depender de su infraestructura.
+	/// Utiliza el spritesheet "HeavySmoke.png" de Calamity para replicar la textura original.
 	/// </summary>
 	[Autoload(Side = ModSide.Client)]
 	public class AmeParticleSystem : ModSystem
 	{
 		private static List<AmeSmoke> _particles;
 		private static List<AmeSmoke> _toRemove;
-		private static Texture2D _smokeTexture;
 		private const int MAX_PARTICLES = 600;
 
 		public override void Load()
@@ -31,7 +29,6 @@ namespace Ame.Particles
 			_particles?.Clear();
 			_particles = null;
 			_toRemove = null;
-			_smokeTexture = null;
 		}
 
 		public override void OnWorldUnload()
@@ -59,7 +56,8 @@ namespace Ame.Particles
 				Opacity = opacity,
 				Rotation = Main.rand.NextFloat(MathHelper.TwoPi),
 				RotationSpeed = rotationSpeed,
-				Glowing = glowing
+				Glowing = glowing,
+				Variant = Main.rand.Next(7) // 7 variantes en HeavySmoke.png
 			});
 		}
 
@@ -74,7 +72,7 @@ namespace Ame.Particles
 				p.Position += p.Velocity;
 				p.Time++;
 
-				// Crecimiento inicial, luego encogimiento (como HeavySmokeParticle)
+				// Crecimiento inicial, luego encogimiento (idéntico a HeavySmokeParticle)
 				if (p.Time / (float)p.Lifetime < 0.2f)
 					p.Scale += 0.01f;
 				else
@@ -99,15 +97,13 @@ namespace Ame.Particles
 
 		/// <summary>
 		/// Dibuja TODAS las partículas. Debe llamarse desde PreDraw de AmeBeam.
-		/// Se divide en 2 capas: no-glowing (fondo) y glowing (frente).
 		/// </summary>
 		public static void DrawAllParticles(SpriteBatch spriteBatch)
 		{
 			if (_particles == null || _particles.Count == 0 || Main.dedServ) return;
 
-			// Cargar textura procedural la primera vez
-			if (_smokeTexture == null || _smokeTexture.IsDisposed)
-				_smokeTexture = CreateSmokeTexture(Main.instance.GraphicsDevice);
+			Texture2D tex = ModContent.Request<Texture2D>("Ame/Particles/HeavySmoke").Value;
+			if (tex == null) return;
 
 			// Capa 1: Partículas no-glowing (humo de fondo) con NonPremultiplied
 			spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.NonPremultiplied, SamplerState.LinearClamp,
@@ -116,7 +112,7 @@ namespace Ame.Particles
 			foreach (var p in _particles)
 			{
 				if (p.Glowing) continue;
-				DrawParticle(spriteBatch, p);
+				DrawParticle(spriteBatch, tex, p);
 			}
 
 			spriteBatch.End();
@@ -128,55 +124,26 @@ namespace Ame.Particles
 			foreach (var p in _particles)
 			{
 				if (!p.Glowing) continue;
-				DrawParticle(spriteBatch, p);
+				DrawParticle(spriteBatch, tex, p);
 			}
 
 			spriteBatch.End();
 		}
 
-		private static void DrawParticle(SpriteBatch spriteBatch, AmeSmoke p)
+		private static void DrawParticle(SpriteBatch spriteBatch, Texture2D tex, AmeSmoke p)
 		{
+			// HeavySmoke.png tiene 7 columnas (variantes) y 6 filas (frames de animación), 80x80 px por frame
+			int frameAmount = 6;
+			int animationFrame = (int)Math.Floor(p.Time / ((float)(p.Lifetime / (float)frameAmount)));
+			if (animationFrame >= frameAmount) animationFrame = frameAmount - 1;
+
+			Rectangle frame = new Rectangle(80 * p.Variant, 80 * animationFrame, 80, 80);
+
 			Color col = p.DrawColor * p.Opacity;
 			Vector2 drawPos = p.Position - Main.screenPosition;
-			Vector2 origin = new Vector2(_smokeTexture.Width / 2f, _smokeTexture.Height / 2f);
-			spriteBatch.Draw(_smokeTexture, drawPos, null, col, p.Rotation, origin, p.Scale, SpriteEffects.None, 0f);
-		}
-
-		/// <summary>
-		/// Genera una textura de humo procedural (soft circle con ruido).
-		/// Esto reemplaza la necesidad de un spritesheet externo.
-		/// </summary>
-		private static Texture2D CreateSmokeTexture(GraphicsDevice device)
-		{
-			int size = 64;
-			Color[] data = new Color[size * size];
-			float center = size / 2f;
-			Random rng = new Random(42); // seed fijo para consistencia
-
-			for (int y = 0; y < size; y++)
-			{
-				for (int x = 0; x < size; x++)
-				{
-					float dx = (x - center) / center;
-					float dy = (y - center) / center;
-					float dist = MathF.Sqrt(dx * dx + dy * dy);
-
-					// Gradiente radial suave con algo de ruido
-					float alpha = MathHelper.SmoothStep(1f, 0f, dist);
-					alpha *= alpha; // hacer más suave el borde
-
-					// Agregar ruido para que no sea un círculo perfecto (simula humo)
-					float noise = 0.7f + (float)rng.NextDouble() * 0.3f;
-					alpha *= noise;
-
-					byte a = (byte)(MathHelper.Clamp(alpha, 0f, 1f) * 255);
-					data[y * size + x] = new Color(255, 255, 255, a);
-				}
-			}
-
-			Texture2D tex = new Texture2D(device, size, size);
-			tex.SetData(data);
-			return tex;
+			Vector2 origin = new Vector2(40f, 40f); // 80 / 2
+			
+			spriteBatch.Draw(tex, drawPos, frame, col, p.Rotation, origin, p.Scale, SpriteEffects.None, 0f);
 		}
 	}
 
@@ -196,5 +163,6 @@ namespace Ame.Particles
 		public float Rotation;
 		public float RotationSpeed;
 		public bool Glowing;
+		public int Variant;
 	}
 }

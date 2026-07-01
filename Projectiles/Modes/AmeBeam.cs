@@ -33,6 +33,15 @@ namespace Ame.Projectiles.Modes
 		private float     _laserGrowth = 0.05f; // Equivale a LaserLength en Calamity
 		private Vector2[] _controlPoints;
 
+		// --- MÁQUINA DE ESTADOS (Carga y Disparo) ---
+		private int   _state = 0; // 0 = Cargando, 1 = Disparando
+		private int   _chargeTimer = 150;
+		private float _chargeVisTimer = 0f;
+		private float _chargePulseTimer = 0f;
+		private float _maxChargeSpeed = 2f;
+		private bool  _playChargeSound = true;
+		private ReLogic.Utilities.SlotId _soundSlot;
+
 		/// <summary>
 		/// Estructura de vértice que coincide EXACTAMENTE con VertexShaderInput del shader:
 		/// float4 Position, float4 Color, float3 TextureCoordinates.
@@ -79,17 +88,20 @@ namespace Ame.Projectiles.Modes
 
 		public override bool ShouldUpdatePosition() => false;
 
+		public override void OnKill(int timeLeft)
+		{
+			if (Terraria.Audio.SoundEngine.TryGetActiveSound(_soundSlot, out var activeSound))
+				activeSound?.Stop();
+		}
+
 		public override void AI()
 		{
 			Player owner = Main.player[Projectile.owner];
-			if (!owner.active || owner.dead) { Projectile.Kill(); return; }
-
-			// Escala del beam crece suavemente (como ExpOutEasing de Calamity)
-			_widthScale = MathHelper.Clamp(_widthScale + 0.10f, 0f, 1f);
-			Projectile.scale = MathHelper.Lerp(0f, 1f, 1f - MathF.Pow(1f - _widthScale, 2f));
-
-			// LaserLength crece gradualmente (exacto a Calamity)
-			_laserGrowth = MathHelper.Lerp(_laserGrowth, 1f, 0.032f);
+			if (!owner.active || owner.dead) 
+			{ 
+				Projectile.Kill(); 
+				return; 
+			}
 
 			Vector2 origin = owner.MountedCenter + new Vector2(owner.direction * 16f, -4f);
 			Projectile.Center = origin;
@@ -97,12 +109,71 @@ namespace Ame.Projectiles.Modes
 			_beamAngle = (Main.MouseWorld - origin).ToRotation();
 			Projectile.velocity = _beamAngle.ToRotationVector2();
 
-			_beamLength = ComputeBeamLength(origin, _beamAngle);
+			if (_state == 0) // CARGANDO
+			{
+				Projectile.timeLeft = EXPIRE_TICKS; // Reset timeLeft to not expire
 
-			BuildControlPoints(origin);
-			SpawnAbyssalParticles(origin);
+				if (_playChargeSound)
+				{
+					Terraria.Audio.SoundStyle charge = new("Ame/Sounds/VoidragonCharge") { Volume = 0.7f, IsLooped = true, Pitch = -0.5f };
+					_soundSlot = Terraria.Audio.SoundEngine.PlaySound(charge, Projectile.Center);
+					_playChargeSound = false;
+				}
 
-			Projectile.Opacity = MathHelper.Clamp(Projectile.Opacity + 0.25f, 0f, 1f);
+				float chargeCompletion = Utils.GetLerpValue(150, 0, _chargeTimer, true);
+				_chargeVisTimer = MathHelper.Lerp(0, _maxChargeSpeed, chargeCompletion);
+				_chargePulseTimer += 0.6f + MathHelper.Lerp(0, _maxChargeSpeed, MathF.Pow(chargeCompletion, 2.5f));
+
+				if (Terraria.Audio.SoundEngine.TryGetActiveSound(_soundSlot, out var sSound) && sSound.IsPlaying)
+				{
+					sSound.Position = Projectile.Center;
+					sSound.Pitch = -0.85f + 1.5f * chargeCompletion;
+				}
+
+				_chargeTimer--;
+
+				if (_chargeTimer <= 0)
+				{
+					_state = 1; // Cambiar a DISPARANDO
+					Projectile.timeLeft = 500; // Duración del láser
+
+					if (Terraria.Audio.SoundEngine.TryGetActiveSound(_soundSlot, out var cSound))
+						cSound?.Stop();
+
+					Terraria.Audio.SoundStyle start = new("Ame/Sounds/VoidragonStrongStart") { Volume = 1f, MaxInstances = 3 };
+					Terraria.Audio.SoundStyle start2 = new("Ame/Sounds/MagnaCannonShot") { Volume = 1f, MaxInstances = 3 };
+					for (int i = 0; i < 3; i++)
+						Terraria.Audio.SoundEngine.PlaySound((i > 0 ? start2 : start) with { Pitch = 0f - 0.5f * i }, Projectile.Center);
+
+					Terraria.Audio.SoundStyle fire = new("Ame/Sounds/VoidragonLaser") { Volume = 1f, IsLooped = true, Pitch = 0f };
+					_soundSlot = Terraria.Audio.SoundEngine.PlaySound(fire, Projectile.Center);
+				}
+				return;
+			}
+
+			if (_state == 1) // DISPARANDO
+			{
+				_widthScale = MathHelper.Clamp(_widthScale + 0.10f, 0f, 1f);
+				Projectile.scale = MathHelper.Lerp(0f, 1f, 1f - MathF.Pow(1f - _widthScale, 2f));
+
+				_laserGrowth = MathHelper.Lerp(_laserGrowth, 1f, 0.032f);
+
+				_beamLength = ComputeBeamLength(origin, _beamAngle);
+
+				BuildControlPoints(origin);
+				SpawnAbyssalParticles(origin);
+
+				Projectile.Opacity = MathHelper.Clamp(Projectile.Opacity + 0.25f, 0f, 1f);
+
+				// Mantener el sonido en loop con volumen y pitch constantes
+				// (Ya no decae a 0 porque el arma puede disparar de forma infinita)
+				if (Terraria.Audio.SoundEngine.TryGetActiveSound(_soundSlot, out var sSound) && sSound.IsPlaying)
+				{
+					sSound.Position = Projectile.Center;
+					sSound.Pitch = 0f;
+					sSound.Volume = 1f;
+				}
+			}
 		}
 
 		public override bool? Colliding(Rectangle projHitbox, Rectangle targetHitbox)
@@ -122,6 +193,16 @@ namespace Ame.Projectiles.Modes
 		// ══════════════════════════════════════════════
 		public override bool PreDraw(ref Color lightColor)
 		{
+			if (_state == 0)
+			{
+				Main.spriteBatch.End();
+				Main.spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.Additive, Main.DefaultSamplerState, DepthStencilState.None, Main.Rasterizer, null, Main.GameViewMatrix.TransformationMatrix);
+				DrawChargeEffects();
+				Main.spriteBatch.End();
+				Main.spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, Main.DefaultSamplerState, DepthStencilState.None, Main.Rasterizer, null, Main.GameViewMatrix.TransformationMatrix);
+				return false;
+			}
+
 			if (_controlPoints == null || _beamLength < 4f || Projectile.Opacity < 0.01f)
 				return false;
 
@@ -146,7 +227,7 @@ namespace Ame.Projectiles.Modes
 			// ── 4. Dibujar partículas de humo DETRÁS del beam (capa de fondo) ──
 			AmeParticleSystem.DrawAllParticles(Main.spriteBatch);
 
-			// ── 5. Configurar parámetros del shader (IDÉNTICO a AbyssalFire.cs) ──
+			// ── 5. Configurar parámetros del shader ──
 			float beamWidthInterpolant = 1f - Projectile.Opacity;
 			fx.Parameters["time"]?.SetValue(Main.GlobalTimeWrappedHourly);
 			fx.Parameters["glowPower"]?.SetValue(0.8f);
@@ -158,14 +239,14 @@ namespace Ame.Projectiles.Modes
 			fx.Parameters["overallColor"]?.SetValue(Color.White.ToVector3());
 			fx.Parameters["tipColor"]?.SetValue(Color.White.ToVector3());
 
-			// ── 6. Matriz WVP (idéntica a CalcuatePixelatedPerspectiveMatrices) ──
+			// ── 6. Matriz WVP ──
 			Matrix wvp =
 				Matrix.CreateTranslation(-Main.screenPosition.X, -Main.screenPosition.Y, 0f) *
 				Main.GameViewMatrix.TransformationMatrix *
 				Matrix.CreateOrthographicOffCenter(0, Main.screenWidth, Main.screenHeight, 0, -1, 1);
 			fx.Parameters["uWorldViewProjection"]?.SetValue(wvp);
 
-			// ── 7. Enlazar HarshNoise al slot 1 (register(s1) en HLSL) ──
+			// ── 7. Enlazar HarshNoise al slot 1 ──
 			device.Textures[1] = noiseAsset.Value;
 			device.SamplerStates[1] = SamplerState.LinearWrap;
 
@@ -173,8 +254,7 @@ namespace Ame.Projectiles.Modes
 			device.BlendState = BlendState.Additive;
 			device.RasterizerState = RasterizerState.CullNone;
 
-			// ── 9. Construir vértices con float3 tex coords ──
-			//       (idéntico a VertexPosition2DColorTexture de Calamity)
+			// ── 9. Construir vértices ──
 			int vertCount = CONTROL_POINTS * 2;
 			BeamVertex[] verts = new BeamVertex[vertCount];
 
@@ -192,10 +272,8 @@ namespace Ame.Projectiles.Modes
 
 				Vector2 center = _controlPoints[i];
 
-				// Coordenadas UV idénticas a Calamity PrimitiveRenderer:
-				// Y = 0.5 ± halfWidth*0.5, Z = halfWidth (para corrección de perspectiva)
 				float effectiveHalfWidth = MathF.Max(halfWidth, 0.001f);
-				float texU = completionRatio; // 0→1 a lo largo del beam
+				float texU = completionRatio;
 
 				Vector2 top = center + perpDir * halfWidth;
 				verts[i * 2] = new BeamVertex
@@ -214,11 +292,11 @@ namespace Ame.Projectiles.Modes
 				};
 			}
 
-			// ── 10. Dibujar primitivas ──
+			// ── 10. Dibujar primitivas a la pantalla ──
 			fx.CurrentTechnique.Passes[0].Apply();
 			device.DrawUserPrimitives(PrimitiveType.TriangleStrip, verts, 0, vertCount - 2);
 
-			// ── 11. Restaurar estados ──
+			// ── 11. Restaurar estado de SpriteBatch ──
 			device.BlendState = BlendState.AlphaBlend;
 			Main.spriteBatch.Begin(
 				SpriteSortMode.Deferred,
@@ -231,6 +309,50 @@ namespace Ame.Projectiles.Modes
 			);
 
 			return false;
+		}
+
+		private void DrawChargeEffects()
+		{
+			Player owner = Main.player[Projectile.owner];
+			Vector2 gunTipPosition = Projectile.Center;
+			float drawRotation = Projectile.rotation + (Projectile.spriteDirection == -1 ? MathHelper.Pi : 0f);
+			SpriteEffects flipSprite = (Projectile.spriteDirection * owner.gravDir == -1) ? SpriteEffects.FlipHorizontally : SpriteEffects.None;
+
+			Texture2D bloom = ModContent.Request<Texture2D>("Ame/ExtraTextures/BloomCircle").Value;
+			Texture2D roar = ModContent.Request<Texture2D>("Ame/ExtraTextures/RoarPulse").Value;
+			Texture2D orb = ModContent.Request<Texture2D>("Ame/ExtraTextures/GlowOrbParticle").Value;
+
+			float chargeVisual = MathF.Pow(Utils.GetLerpValue(0, _maxChargeSpeed / 1.5f, _chargeVisTimer, true), 1.5f);
+			float finalChargeVisual = MathF.Pow(Utils.GetLerpValue(_maxChargeSpeed / 1.5f, _maxChargeSpeed, _chargeVisTimer, true), 3f);
+
+			int max = 30;
+			float ringScaling = MathF.Pow(1 - Utils.GetLerpValue(0, max, _chargePulseTimer % max, true), 1.15f);
+			float ringOpacity = 1 - MathF.Abs(Utils.GetLerpValue(0.5f, 1, ringScaling, false));
+
+			// Black aura
+			for (int i = 0; i < 15; i++)
+			{
+				Color lerpColor = Color.Lerp(Color.Black, Color.Indigo, finalChargeVisual);
+				Color color = lerpColor * (0.5f + ringOpacity * 0.8f); // Más visible
+				Vector2 scale = new Vector2(0.85f + i * 0.065f, 0.85f - i * 0.065f) * (1f + finalChargeVisual * 1.8f) * owner.gravDir * chargeVisual * (4.25f - ringScaling * 2.5f);
+				scale *= 1.35f; // Hacemos toda el aura un 35% más grande
+				Main.EntitySpriteDraw(orb, gunTipPosition - Main.screenPosition, null, color, drawRotation + Main.rand.NextFloat(-4f, 4f), orb.Size() / 2, scale, flipSprite, 0);
+			}
+
+			// Glow aura
+			for (int i = 0; i < 3; i++)
+			{
+				Color glowColor = Color.Lerp(Color.BlueViolet, Color.White, i == 0 ? 0.8f : 0f) * 1.25f; // Colores más brillantes
+				
+				float scale = (1f + finalChargeVisual * 1.8f) * owner.gravDir * chargeVisual * 0.5f * (i == 0 ? 0.75f : 1f);
+				scale *= 1.75f; // Mucho más grande
+				Main.EntitySpriteDraw(bloom, gunTipPosition - Main.screenPosition, null, glowColor, drawRotation + Main.rand.NextFloat(-4f, 4f), bloom.Size() / 2, scale, flipSprite, 0);
+			}
+
+			// Pulse Rings
+			Color ringColor = Color.White * ringOpacity; // Usamos blanco para que sea más intenso
+			float ringScale = 1.5f * owner.gravDir * chargeVisual * ringScaling; // 3 veces más grande (0.5f a 1.5f)
+			Main.EntitySpriteDraw(roar, gunTipPosition - Main.screenPosition, null, ringColor, drawRotation + Main.rand.NextFloat(-4f, 4f), roar.Size() / 2, ringScale, flipSprite, 0);
 		}
 
 		// ══════════════════════════════════════════════════
@@ -322,18 +444,8 @@ namespace Ame.Projectiles.Modes
 		// ══════════════════════════════
 		private float ComputeBeamLength(Vector2 origin, float angle)
 		{
-			Vector2 dir = angle.ToRotationVector2();
-			float length = 0f;
-			for (float f = 0f; f < MAX_LENGTH; f += 8f)
-			{
-				if (Collision.SolidCollision(origin + dir * f - new Vector2(4f), 8, 8))
-				{
-					length = f;
-					break;
-				}
-				length = f;
-			}
-			return length;
+			// El láser original pasa derecho a través de los bloques.
+			return MAX_LENGTH;
 		}
 
 		private void BuildControlPoints(Vector2 origin)
