@@ -8,6 +8,7 @@ using Terraria.Graphics;
 using Terraria.Graphics.Shaders;
 using Terraria.ID;
 using Terraria.ModLoader;
+using Ame.Players;
 
 namespace Ame.Projectiles.Modes
 {
@@ -23,7 +24,7 @@ namespace Ame.Projectiles.Modes
 	public class AmeBeam : ModProjectile
 	{
 		private const float MAX_LENGTH      = 2400f;
-		private const float MAX_WIDTH       = 130f;
+		private const float MAX_WIDTH       = 400f;
 		private const int   CONTROL_POINTS  = 32;
 		private const int   EXPIRE_TICKS    = 5;
 
@@ -124,6 +125,9 @@ namespace Ame.Projectiles.Modes
 				_chargeVisTimer = MathHelper.Lerp(0, _maxChargeSpeed, chargeCompletion);
 				_chargePulseTimer += 0.6f + MathHelper.Lerp(0, _maxChargeSpeed, MathF.Pow(chargeCompletion, 2.5f));
 
+				// Tiembla la pantalla incrementando progresivamente
+				owner.GetModPlayer<AmePlayer>().ScreenShake = MathHelper.Lerp(0f, 4f, chargeCompletion);
+
 				if (Terraria.Audio.SoundEngine.TryGetActiveSound(_soundSlot, out var sSound) && sSound.IsPlaying)
 				{
 					sSound.Position = Projectile.Center;
@@ -165,6 +169,9 @@ namespace Ame.Projectiles.Modes
 
 				Projectile.Opacity = MathHelper.Clamp(Projectile.Opacity + 0.25f, 0f, 1f);
 
+				// Tiembla la pantalla constantemente por la fuerza del láser
+				owner.GetModPlayer<AmePlayer>().ScreenShake = 10f;
+
 				// Mantener el sonido en loop con volumen y pitch constantes
 				// (Ya no decae a 0 porque el arma puede disparar de forma infinita)
 				if (Terraria.Audio.SoundEngine.TryGetActiveSound(_soundSlot, out var sSound) && sSound.IsPlaying)
@@ -183,7 +190,7 @@ namespace Ame.Projectiles.Modes
 			return Collision.CheckAABBvLineCollision(
 				targetHitbox.TopLeft(), targetHitbox.Size(),
 				origin, origin + Projectile.velocity * _beamLength,
-				MAX_WIDTH * 0.30f * Projectile.scale,
+				MAX_WIDTH * 0.35f * Projectile.scale,
 				ref cp
 			);
 		}
@@ -234,9 +241,9 @@ namespace Ame.Projectiles.Modes
 			fx.Parameters["overallColorStrength"]?.SetValue(beamWidthInterpolant);
 			fx.Parameters["edgeFadeoutThreshold"]?.SetValue(new Vector2(0.46f, 0.46f));
 			fx.Parameters["noiseScale"]?.SetValue(new Vector2(4f, 0.5f));
-			fx.Parameters["innerColor"]?.SetValue(Color.DarkViolet.ToVector3());
+			fx.Parameters["innerColor"]?.SetValue(Color.Red.ToVector3());
 			fx.Parameters["outerColor"]?.SetValue(Color.Black.ToVector3());
-			fx.Parameters["overallColor"]?.SetValue(Color.White.ToVector3());
+			fx.Parameters["overallColor"]?.SetValue(new Color(255, 100, 100).ToVector3());
 			fx.Parameters["tipColor"]?.SetValue(Color.White.ToVector3());
 
 			// ── 6. Matriz WVP ──
@@ -332,7 +339,7 @@ namespace Ame.Projectiles.Modes
 			// Black aura
 			for (int i = 0; i < 15; i++)
 			{
-				Color lerpColor = Color.Lerp(Color.Black, Color.Indigo, finalChargeVisual);
+				Color lerpColor = Color.Lerp(Color.Black, Color.DarkRed, finalChargeVisual);
 				Color color = lerpColor * (0.5f + ringOpacity * 0.8f); // Más visible
 				Vector2 scale = new Vector2(0.85f + i * 0.065f, 0.85f - i * 0.065f) * (1f + finalChargeVisual * 1.8f) * owner.gravDir * chargeVisual * (4.25f - ringScaling * 2.5f);
 				scale *= 1.35f; // Hacemos toda el aura un 35% más grande
@@ -342,7 +349,7 @@ namespace Ame.Projectiles.Modes
 			// Glow aura
 			for (int i = 0; i < 3; i++)
 			{
-				Color glowColor = Color.Lerp(Color.BlueViolet, Color.White, i == 0 ? 0.8f : 0f) * 1.25f; // Colores más brillantes
+				Color glowColor = Color.Lerp(Color.Red, Color.White, i == 0 ? 0.8f : 0f) * 1.25f; // Colores más brillantes
 				
 				float scale = (1f + finalChargeVisual * 1.8f) * owner.gravDir * chargeVisual * 0.5f * (i == 0 ? 0.75f : 1f);
 				scale *= 1.75f; // Mucho más grande
@@ -380,8 +387,8 @@ namespace Ame.Projectiles.Modes
 			if (_beamLength < 50f) return;
 			Vector2 dir = Projectile.velocity;
 
-			// Iluminación a lo largo del beam (idéntico a Calamity)
-			DelegateMethods.v3_1 = Color.DarkViolet.ToVector3() * Projectile.scale * 0.4f;
+			// Iluminación a lo largo del beam
+			DelegateMethods.v3_1 = Color.Red.ToVector3() * Projectile.scale * 0.4f;
 			Utils.PlotTileLine(origin, origin + dir * _beamLength, MAX_WIDTH * Projectile.scale, DelegateMethods.CastLight);
 
 			if (Projectile.scale < 0.25f) return;
@@ -402,15 +409,16 @@ namespace Ame.Projectiles.Modes
 				Vector2 fireVelocity = fireDir * Main.rand.NextFloat(25f, 30f);
 
 				int fireLifetime = Main.rand.Next(45, 60);
-				float fireScale = Main.rand.NextFloat(1.75f, 2.25f) * Projectile.scale;
+				// Aumentar la escala general de las partículas para que llenen el nuevo tamaño del rayo
+				float fireScale = Main.rand.NextFloat(4.5f, 6.0f) * Projectile.scale;
 
-				// 1. Fondo: Humo oscuro DarkViolet/Negro (NO glowing, semitransparente)
-				Color bgColor = Color.Lerp(Color.DarkViolet, Color.Black, 0.25f);
+				// 1. Fondo: Humo oscuro DarkRed/Negro (NO glowing, semitransparente)
+				Color bgColor = Color.Lerp(Color.DarkRed, Color.Black, 0.25f);
 				AmeParticleSystem.SpawnSmoke(bodyPos, fireVelocity, bgColor, fireLifetime,
 					fireScale, 1f, Main.rand.NextFloat(0.02f, 0.1f) * (Main.rand.NextBool() ? 1f : -1f), false);
 
-				// 2. Frente: Fuego Purple/Blanco brillante (GLOWING, aditivo)
-				Color fgColor = Main.rand.NextBool(4) ? Color.White : Color.Purple;
+				// 2. Frente: Fuego Red/Blanco brillante (GLOWING, aditivo)
+				Color fgColor = Main.rand.NextBool(4) ? Color.White : Color.Red;
 				AmeParticleSystem.SpawnSmoke(bodyPos, fireVelocity, fgColor, fireLifetime,
 					fireScale * 0.6f, 0.8f, Main.rand.NextFloat(0.02f, 0.1f) * (Main.rand.NextBool() ? 1f : -1f), true);
 
@@ -424,15 +432,16 @@ namespace Ame.Projectiles.Modes
 			{
 				Vector2 fireVelocity = dir.RotatedByRandom(MathHelper.ToRadians(20f)) * Main.rand.NextFloat(15f, 20f);
 				AmeParticleSystem.SpawnSmoke(origin - dir * 8f, fireVelocity, Color.White,
-					Main.rand.Next(15, 20), 0.64f, 0.7f, Main.rand.NextFloat(0.02f, 0.1f) * (Main.rand.NextBool() ? 1f : -1f), true);
+					Main.rand.Next(15, 20), 1.6f, 0.7f, Main.rand.NextFloat(0.02f, 0.1f) * (Main.rand.NextBool() ? 1f : -1f), true);
 			}
 
-			// Dust extra de Shadowflame para variedad
+			// Dust extra para variedad (Polvo de antorcha roja)
 			if (Main.rand.NextBool(2))
 			{
 				float t = Main.rand.NextFloat();
 				Vector2 pos = origin + dir * (_beamLength * t);
-				Dust d = Dust.NewDustDirect(pos - new Vector2(10), 20, 20, DustID.Shadowflame);
+				// El DustID.RedTorch es 60
+				Dust d = Dust.NewDustDirect(pos - new Vector2(10), 20, 20, DustID.RedTorch);
 				d.velocity  = dir * Main.rand.NextFloat(2f, 8f);
 				d.noGravity = true;
 				d.scale     = Main.rand.NextFloat(1.5f, 2.5f);

@@ -32,6 +32,11 @@ namespace Ame.Players
 		public bool SummonActive { get; private set; }
 
 		// ═══════════════════════════════════════════════════════════
+		// SCREEN SHAKE
+		// ═══════════════════════════════════════════════════════════
+		public float ScreenShake { get; set; }
+
+		// ═══════════════════════════════════════════════════════════
 		// ESTADO INTERNO
 		// ═══════════════════════════════════════════════════════════
 
@@ -65,6 +70,14 @@ namespace Ame.Players
 		public override void ResetEffects()
 		{
 			hasAmeWeapon = false;
+		}
+
+		public override void ModifyScreenPosition()
+		{
+			if (ScreenShake > 0f)
+			{
+				Main.screenPosition += new Vector2(Main.rand.NextFloat(-ScreenShake, ScreenShake), Main.rand.NextFloat(-ScreenShake, ScreenShake));
+			}
 		}
 
 		// ═══════════════════════════════════════════════════════════
@@ -175,7 +188,12 @@ namespace Ame.Players
 
 		public override void PostUpdate()
 		{
-			// Mantener la variable estática sincronizada incluso fuera de PostUpdateEquips
+			// Decaimiento del screen shake
+			if (ScreenShake > 0f)
+			{
+				ScreenShake -= 0.5f;
+				if (ScreenShake < 0f) ScreenShake = 0f;
+			}
 		}
 
 		public void ToggleSummonSwords(Items.AmeWeapon ameWeapon)
