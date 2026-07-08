@@ -85,6 +85,9 @@ Projectiles: {
 	AmeSummonSword19.DisplayName: Ame Summon Sword19
 	AmeBeamCharge.DisplayName: Ame Beam Charge
 	AmeBeam.DisplayName: Ame Beam
+	AmeRiftPortal.DisplayName: Ame Rift Portal
+	AmeRiftBolt.DisplayName: Ame Rift Bolt
+	AmeImpactEffect.DisplayName: Ame Impact Effect
 }
 
 Buffs: {
