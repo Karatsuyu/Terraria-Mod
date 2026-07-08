@@ -38,6 +38,7 @@ namespace Ame.Items
 	// 🔥 Iconos
 	private static Asset<Texture2D> melee1Texture;
 	private static Asset<Texture2D> summonTexture;
+	private static Asset<Texture2D> magicTexture;
 	private int melee2FrameCounter = 0;
 	private int melee2Frame = 0;
 	private int melee2FrameCount = 1; // Se calcula automáticamente al cargar la textura
@@ -50,6 +51,7 @@ namespace Ame.Items
 			// Cargar texturas para otros modos
 			melee1Texture = ModContent.Request<Texture2D>("Ame/Projectiles/Modes/IconoMelee1");
 			summonTexture = ModContent.Request<Texture2D>("Ame/Projectiles/Modes/IconoModoInvocador");
+			magicTexture = ModContent.Request<Texture2D>("Ame/Projectiles/Modes/Icono_Modo_Magic");
 		}
 
 	// Textura base guardada para poder restaurar
@@ -616,6 +618,14 @@ namespace Ame.Items
 				spriteBatch.Draw(tex, position, sourceRect, drawColor, 0f, drawOrigin, scale, SpriteEffects.None, 0f);
 				return false;
 			}
+			else if (CurrentMode == WeaponMode.Magic && magicTexture != null && magicTexture.IsLoaded)
+			{
+				Texture2D tex = magicTexture.Value;
+				Rectangle sourceRect = new Rectangle(0, 0, tex.Width, tex.Height);
+				Vector2 drawOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
+				spriteBatch.Draw(tex, position, sourceRect, drawColor, 0f, drawOrigin, scale, SpriteEffects.None, 0f);
+				return false;
+			}
 
 			if (CurrentMode != WeaponMode.Melee2 || melee2Texture == null || !melee2Texture.IsLoaded)
 				return true; // Dibujar icono normal para otros modos
@@ -689,6 +699,12 @@ namespace Ame.Items
 				Terraria.GameContent.TextureAssets.Item[Item.type] = summonTexture;
 				Main.itemAnimations[Item.type] = null;
 			}
+			else if (CurrentMode == WeaponMode.Magic && magicTexture != null && magicTexture.IsLoaded)
+			{
+				// Usar el icono de Magic
+				Terraria.GameContent.TextureAssets.Item[Item.type] = magicTexture;
+				Main.itemAnimations[Item.type] = null;
+			}
 			else
 			{
 				// Restaurar textura y animación original
@@ -714,6 +730,15 @@ namespace Ame.Items
 			else if (CurrentMode == WeaponMode.Summon && summonTexture != null && summonTexture.IsLoaded)
 			{
 				Texture2D tex = summonTexture.Value;
+				Rectangle sourceRect = new Rectangle(0, 0, tex.Width, tex.Height);
+				Vector2 drawOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
+				Vector2 drawPos = Item.Center - Main.screenPosition;
+				spriteBatch.Draw(tex, drawPos, sourceRect, lightColor, rotation, drawOrigin, scale, SpriteEffects.None, 0f);
+				return false;
+			}
+			else if (CurrentMode == WeaponMode.Magic && magicTexture != null && magicTexture.IsLoaded)
+			{
+				Texture2D tex = magicTexture.Value;
 				Rectangle sourceRect = new Rectangle(0, 0, tex.Width, tex.Height);
 				Vector2 drawOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
 				Vector2 drawPos = Item.Center - Main.screenPosition;
